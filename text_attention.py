@@ -1,94 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-NLP From Scratch: Translation with a Sequence to Sequence Network and Attention
-*******************************************************************************
-**Author**: `Sean Robertson <https://github.com/spro/practical-pytorch>`_
-
-This is the third and final tutorial on doing "NLP From Scratch", where we
-write our own classes and functions to preprocess the data to do our NLP
-modeling tasks. We hope after you complete this tutorial that you'll proceed to
-learn how `torchtext` can handle much of this preprocessing for you in the
-three tutorials immediately following this one.
-
-In this project we will be teaching a neural network to translate from
-French to English.
-
-::
-
-    [KEY: > input, = target, < output]
-
-    > il est en train de peindre un tableau .
-    = he is painting a picture .
-    < he is painting a picture .
-
-    > pourquoi ne pas essayer ce vin delicieux ?
-    = why not try that delicious wine ?
-    < why not try that delicious wine ?
-
-    > elle n est pas poete mais romanciere .
-    = she is not a poet but a novelist .
-    < she not not a poet but a novelist .
-
-    > vous etes trop maigre .
-    = you re too skinny .
-    < you re all alone .
-
-... to varying degrees of success.
-
-This is made possible by the simple but powerful idea of the `sequence
-to sequence network <https://arxiv.org/abs/1409.3215>`__, in which two
-recurrent neural networks work together to transform one sequence to
-another. An encoder network condenses an input sequence into a vector,
-and a decoder network unfolds that vector into a new sequence.
-
-.. figure:: /_static/img/seq-seq-images/seq2seq.png
-   :alt:
-
-To improve upon this model we'll use an `attention
-mechanism <https://arxiv.org/abs/1409.0473>`__, which lets the decoder
-learn to focus over a specific range of the input sequence.
-
-**Recommended Reading:**
-
-I assume you have at least installed PyTorch, know Python, and
-understand Tensors:
-
--  https://pytorch.org/ For installation instructions
--  :doc:`/beginner/deep_learning_60min_blitz` to get started with PyTorch in general
--  :doc:`/beginner/pytorch_with_examples` for a wide and deep overview
--  :doc:`/beginner/former_torchies_tutorial` if you are former Lua Torch user
-
-
-It would also be useful to know about Sequence to Sequence networks and
-how they work:
-
--  `Learning Phrase Representations using RNN Encoder-Decoder for
-   Statistical Machine Translation <https://arxiv.org/abs/1406.1078>`__
--  `Sequence to Sequence Learning with Neural
-   Networks <https://arxiv.org/abs/1409.3215>`__
--  `Neural Machine Translation by Jointly Learning to Align and
-   Translate <https://arxiv.org/abs/1409.0473>`__
--  `A Neural Conversational Model <https://arxiv.org/abs/1506.05869>`__
-
-You will also find the previous tutorials on
-:doc:`/intermediate/char_rnn_classification_tutorial`
-and :doc:`/intermediate/char_rnn_generation_tutorial`
-helpful as those concepts are very similar to the Encoder and Decoder
-models, respectively.
-
-And for more, read the papers that introduced these topics:
-
--  `Learning Phrase Representations using RNN Encoder-Decoder for
-   Statistical Machine Translation <https://arxiv.org/abs/1406.1078>`__
--  `Sequence to Sequence Learning with Neural
-   Networks <https://arxiv.org/abs/1409.3215>`__
--  `Neural Machine Translation by Jointly Learning to Align and
-   Translate <https://arxiv.org/abs/1409.0473>`__
--  `A Neural Conversational Model <https://arxiv.org/abs/1506.05869>`__
-
-
-**Requirements**
-"""
 from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
@@ -96,12 +6,15 @@ import string
 import re
 import random
 
+import tqdm
+
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEBUG = False
 
 ######################################################################
 # Loading data files
@@ -162,7 +75,7 @@ class Lang:
         self.name = name
         self.word2index = {}
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS"}
+        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
         self.n_words = 2  # Count SOS and EOS
 
     def addSentence(self, sentence):
@@ -290,195 +203,316 @@ input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
 print(random.choice(pairs))
 
 
-######################################################################
-# The Seq2Seq Model
-# =================
-#
-# A Recurrent Neural Network, or RNN, is a network that operates on a
-# sequence and uses its own output as input for subsequent steps.
-#
-# A `Sequence to Sequence network <https://arxiv.org/abs/1409.3215>`__, or
-# seq2seq network, or `Encoder Decoder
-# network <https://arxiv.org/pdf/1406.1078v3.pdf>`__, is a model
-# consisting of two RNNs called the encoder and decoder. The encoder reads
-# an input sequence and outputs a single vector, and the decoder reads
-# that vector to produce an output sequence.
-#
-# .. figure:: /_static/img/seq-seq-images/seq2seq.png
-#    :alt:
-#
-# Unlike sequence prediction with a single RNN, where every input
-# corresponds to an output, the seq2seq model frees us from sequence
-# length and order, which makes it ideal for translation between two
-# languages.
-#
-# Consider the sentence "Je ne suis pas le chat noir" → "I am not the
-# black cat". Most of the words in the input sentence have a direct
-# translation in the output sentence, but are in slightly different
-# orders, e.g. "chat noir" and "black cat". Because of the "ne/pas"
-# construction there is also one more word in the input sentence. It would
-# be difficult to produce a correct translation directly from the sequence
-# of input words.
-#
-# With a seq2seq model the encoder creates a single vector which, in the
-# ideal case, encodes the "meaning" of the input sequence into a single
-# vector — a single point in some N dimensional space of sentences.
-#
+class Encoder(nn.Module):
+    def __init__(self, input_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout):
+        super().__init__()
+
+        self.input_dim = input_dim
+        self.embedding = nn.Embedding(input_dim, emb_dim)
+        self.rnn = nn.GRU(emb_dim, enc_hid_dim, bidirectional = True)
+        self.fc = nn.Linear(enc_hid_dim * 2, dec_hid_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, src):
+        #src = [src sent len, batch size]
+        src = src.view(src.size(0), src.size(1))
+        embedded = self.dropout(self.embedding(src))
+
+        #embedded = [src sent len, batch size, emb dim]
+        outputs, hidden = self.rnn(embedded)
+
+        #outputs = [src sent len, batch size, hid dim * num directions]
+        #hidden = [n layers * num directions, batch size, hid dim]
+
+        #hidden is stacked [forward_1, backward_1, forward_2, backward_2, ...]
+        #outputs are always from the last layer
+
+        #hidden [-2, :, : ] is the last of the forwards RNN
+        #hidden [-1, :, : ] is the last of the backwards RNN
+
+        #initial decoder hidden is final hidden state of the forwards and backwards
+        #  encoder RNNs fed through a linear layer
+        hidden = torch.tanh(self.fc(torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim = 1)))
+
+        #outputs = [src sent len, batch size, enc hid dim * 2]
+        #hidden = [batch size, dec hid dim]
+        return outputs, hidden
 
 
-######################################################################
-# The Encoder
-# -----------
-#
-# The encoder of a seq2seq network is a RNN that outputs some value for
-# every word from the input sentence. For every input word the encoder
-# outputs a vector and a hidden state, and uses the hidden state for the
-# next input word.
-#
-# .. figure:: /_static/img/seq-seq-images/encoder-network.png
-#    :alt:
-#
-#
+class Attention(nn.Module):
+    def __init__(self, enc_hid_dim, dec_hid_dim):
+        super().__init__()
 
-class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size):
-        super(EncoderRNN, self).__init__()
-        self.hidden_size = hidden_size
+        self.attn = nn.Linear((enc_hid_dim * 2) + dec_hid_dim, dec_hid_dim)
+        self.v = nn.Parameter(torch.rand(dec_hid_dim))
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+    def forward(self, hidden, encoder_outputs):
 
-    def forward(self, input, hidden):
-        embedded = self.embedding(input).view(1, 1, -1)
-        output = embedded
-        output, hidden = self.gru(output, hidden)
-        return output, hidden
+        #hidden = [batch size, dec hid dim]
+        #encoder_outputs = [src sent len, batch size, enc hid dim * 2]
+        batch_size = encoder_outputs.shape[1]
+        src_len = encoder_outputs.shape[0]
 
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        #repeat encoder hidden state src_len times
+        hidden = hidden.unsqueeze(1).repeat(1, src_len, 1)
 
-######################################################################
-# The Decoder
-# -----------
-#
-# The decoder is another RNN that takes the encoder output vector(s) and
-# outputs a sequence of words to create the translation.
-#
+        encoder_outputs = encoder_outputs.permute(1, 0, 2)
+
+        #hidden = [batch size, src sent len, dec hid dim]
+        #encoder_outputs = [batch size, src sent len, enc hid dim * 2]
+        energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim = 2)))
+
+        #energy = [batch size, src sent len, dec hid dim]
+        energy = energy.permute(0, 2, 1)
+
+        #energy = [batch size, dec hid dim, src sent len]
+        #v = [dec hid dim]
+        v = self.v.repeat(batch_size, 1).unsqueeze(1)
+
+        #v = [batch size, 1, dec hid dim]
+        attention = torch.bmm(v, energy).squeeze(1)
+
+        #attention= [batch size, src len]
+        return F.softmax(attention, dim=1)
 
 
-######################################################################
-# Simple Decoder
-# ^^^^^^^^^^^^^^
-#
-# In the simplest seq2seq decoder we use only last output of the encoder.
-# This last output is sometimes called the *context vector* as it encodes
-# context from the entire sequence. This context vector is used as the
-# initial hidden state of the decoder.
-#
-# At every step of decoding, the decoder is given an input token and
-# hidden state. The initial input token is the start-of-string ``<SOS>``
-# token, and the first hidden state is the context vector (the encoder's
-# last hidden state).
-#
-# .. figure:: /_static/img/seq-seq-images/decoder-network.png
-#    :alt:
-#
-#
 
-class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
+class Decoder(nn.Module):
+    def __init__(self, output_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout, attention):
+        super().__init__()
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.output_dim = output_dim
+        self.attention = attention
 
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
-
-######################################################################
-# I encourage you to train and observe the results of this model, but to
-# save space we'll be going straight for the gold and introducing the
-# Attention Mechanism.
-#
-
-
-######################################################################
-# Attention Decoder
-# ^^^^^^^^^^^^^^^^^
-#
-# If only the context vector is passed betweeen the encoder and decoder,
-# that single vector carries the burden of encoding the entire sentence.
-#
-# Attention allows the decoder network to "focus" on a different part of
-# the encoder's outputs for every step of the decoder's own outputs. First
-# we calculate a set of *attention weights*. These will be multiplied by
-# the encoder output vectors to create a weighted combination. The result
-# (called ``attn_applied`` in the code) should contain information about
-# that specific part of the input sequence, and thus help the decoder
-# choose the right output words.
-#
-# .. figure:: https://i.imgur.com/1152PYf.png
-#    :alt:
-#
-# Calculating the attention weights is done with another feed-forward
-# layer ``attn``, using the decoder's input and hidden state as inputs.
-# Because there are sentences of all sizes in the training data, to
-# actually create and train this layer we have to choose a maximum
-# sentence length (input length, for encoder outputs) that it can apply
-# to. Sentences of the maximum length will use all the attention weights,
-# while shorter sentences will only use the first few.
-#
-# .. figure:: /_static/img/seq-seq-images/attention-decoder-network.png
-#    :alt:
-#
-#
-
-class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, dropout_p=0.1, max_length=MAX_LENGTH):
-        super(AttnDecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.dropout_p = dropout_p
-        self.max_length = max_length
-
-        self.embedding = nn.Embedding(self.output_size, self.hidden_size)
-        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
-        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        self.dropout = nn.Dropout(self.dropout_p)
-        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
-        self.out = nn.Linear(self.hidden_size, self.output_size)
+        self.embedding = nn.Embedding(output_dim, emb_dim)
+        self.rnn = nn.GRU((enc_hid_dim * 2) + emb_dim, dec_hid_dim)
+        self.out = nn.Linear((enc_hid_dim * 2) + dec_hid_dim + emb_dim, output_dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input).view(1, 1, -1)
-        embedded = self.dropout(embedded)
 
-        attn_weights = F.softmax(
-            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_outputs.unsqueeze(0))
+        #input = [batch size]
+        #hidden = [batch size, dec hid dim]
+        #encoder_outputs = [src sent len, batch size, enc hid dim * 2]
+        input = input.unsqueeze(0)
+        #input = [1, batch size]
+        input = input.view(input.size(0), input.size(1))
 
-        output = torch.cat((embedded[0], attn_applied[0]), 1)
-        output = self.attn_combine(output).unsqueeze(0)
+        embedded = self.dropout(self.embedding(input))
+        #embedded = [1, batch size, emb dim]
 
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
+        a = self.attention(hidden, encoder_outputs)
+        #a = [batch size, src len]
+        a = a.unsqueeze(1)
+        #a = [batch size, 1, src len]
 
-        output = F.log_softmax(self.out(output[0]), dim=1)
-        return output, hidden, attn_weights
+        encoder_outputs = encoder_outputs.permute(1, 0, 2)
+        #encoder_outputs = [batch size, src sent len, enc hid dim * 2]
 
-    def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        weighted = torch.bmm(a, encoder_outputs)
+        #weighted = [batch size, 1, enc hid dim * 2]
 
+        weighted = weighted.permute(1, 0, 2)
+        #weighted = [1, batch size, enc hid dim * 2]
+
+        rnn_input = torch.cat((embedded, weighted), dim = 2)
+        #rnn_input = [1, batch size, (enc hid dim * 2) + emb dim]
+
+        output, hidden = self.rnn(rnn_input, hidden.unsqueeze(0))
+        #output = [sent len, batch size, dec hid dim * n directions]
+        #hidden = [n layers * n directions, batch size, dec hid dim]
+
+        #sent len, n layers and n directions will always be 1 in this decoder, therefore:
+        #output = [1, batch size, dec hid dim]
+        #hidden = [1, batch size, dec hid dim]
+        #this also means that output == hidden
+        assert (output == hidden).all()
+
+        embedded = embedded.squeeze(0)
+        output = output.squeeze(0)
+        weighted = weighted.squeeze(0)
+
+        output = self.out(torch.cat((output, weighted, embedded), dim = 1))
+        #output = [bsz, output dim]
+
+        return output, hidden.squeeze(0)
+
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        super().__init__()
+
+        self.encoder = encoder
+        self.decoder = decoder
+        self.device = device
+
+    def forward(self, src, trg, teacher_forcing_ratio = 0.5):
+
+        #src = [src sent len, batch size]
+        #trg = [trg sent len, batch size]
+        #teacher_forcing_ratio is probability to use teacher forcing
+        #e.g. if teacher_forcing_ratio is 0.75 we use teacher forcing 75% of the time
+
+        batch_size = src.shape[1]
+        max_len = trg.shape[0]
+        trg_vocab_size = self.decoder.output_dim
+
+        #tensor to store decoder outputs
+        outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
+
+        #encoder_outputs is all hidden states of the input sequence, back and forwards
+        #hidden is the final forward and backward hidden states, passed through a linear layer
+        encoder_outputs, hidden = self.encoder(src)
+
+        #first input to the decoder is the <sos> tokens
+        input = trg[0,:]
+        for t in range(1, max_len):
+
+            #insert input token embedding, previous hidden state and all encoder hidden states
+            #receive output tensor (predictions) and new hidden state
+            output, hidden = self.decoder(input, hidden, encoder_outputs)
+
+            #place predictions in a tensor holding predictions for each token
+            outputs[t] = output
+
+            #decide if we are going to use teacher forcing or not
+            teacher_force = random.random() < teacher_forcing_ratio
+
+            #get the highest predicted token from our predictions
+            top1 = output.argmax(1)
+
+            #if teacher forcing, use actual next token as next input
+            #if not, use predicted token
+            input = trg[t] if teacher_force else top1
+
+        return outputs
+
+
+def init_weights(m):
+    for name, param in m.named_parameters():
+        if 'weight' in name:
+            nn.init.normal_(param.data, mean=0, std=0.01)
+        else:
+            nn.init.constant_(param.data, 0)
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+
+def batch_data(input_data, target_data, batch_size, device, pbar=None):
+    global PAD_IDX
+    index = 0
+    if pbar is not None:
+        pbar.total = int(len(input_data)/batch_size)
+    last = False
+    while index < len(input_data)/batch_size:
+        if (index+1)*batch_size < len(input_data):
+            batch_input = input_data[index*batch_size: (index+1)*batch_size]
+            batch_target = target_data[index*batch_size: (index+1)*batch_size]
+        else:
+            batch_input = input_data[index*batch_size:]
+            batch_target = target_data[index*batch_size:]
+            batch_size = len(batch_input)
+            last = True
+        input_lengths = [len(p) for p in batch_input]
+        target_lengths = [len(p) for p in batch_target]
+        padded_input = torch.nn.utils.rnn.pad_sequence(batch_input, batch_first=True, padding_value=PAD_IDX).view(batch_size, -1)
+        padded_target = torch.nn.utils.rnn.pad_sequence(batch_target, batch_first=True, padding_value=PAD_IDX).view(batch_size, -1)
+        yield [padded_input.permute(1, 0), padded_target.permute(1, 0)]
+        # yield [torch.nn.utils.rnn.pack_padded_sequence(padded_input, input_lengths, batch_first=True, enforce_sorted=False),
+        # torch.nn.utils.rnn.pack_padded_sequence(padded_target, target_lengths, batch_first=True, enforce_sorted=False)]
+        if pbar is not None:
+            pbar.n = index
+            pbar.update(0)
+        index+=1
+        if last:
+            break
+
+def train(model, iterator, optimizer, criterion, clip, loss_bar=None):
+
+    model.train()
+    epoch_loss = 0
+    samples = 0
+    if loss_bar is not None:
+        loss_bar.total = 10
+    for i, batch in enumerate(iterator):
+        src = batch[0]
+        trg = batch[1]
+        samples += len(src)
+
+        optimizer.zero_grad()
+        output = model(src, trg)
+        #trg = [trg sent len, batch size]
+        #output = [trg sent len, batch size, output dim]
+
+        output = output[1:].view(-1, output.shape[-1])
+        trg = trg[1:].contiguous().view(-1)
+
+        #trg = [(trg sent len - 1) * batch size]
+        #output = [(trg sent len - 1) * batch size, output dim]
+
+        loss = criterion(output, trg)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+        optimizer.step()
+
+        if loss_bar is not None:
+            loss_bar.n = epoch_loss/samples
+            loss_bar.write(str(epoch_loss/samples))
+            # loss_bar.total = max([loss_bar.total, loss.item()])
+            loss_bar.update(0)
+        epoch_loss += loss.item()
+
+    return epoch_loss / samples
+
+
+# ...and the evaluation loop, remembering to set the model to `eval` mode and turn off teaching forcing.
+
+# In[23]:
+
+
+def evaluate(model, iterator, criterion):
+
+    model.eval()
+
+    epoch_loss = 0
+
+    with torch.no_grad():
+
+        for i, batch in enumerate(iterator):
+
+            src = batch.src
+            trg = batch.trg
+
+            output = model(src, trg, 0) #turn off teacher forcing
+
+            #trg = [trg sent len, batch size]
+            #output = [trg sent len, batch size, output dim]
+
+            output = output[1:].view(-1, output.shape[-1])
+            trg = trg[1:].view(-1)
+
+            #trg = [(trg sent len - 1) * batch size]
+            #output = [(trg sent len - 1) * batch size, output dim]
+
+            loss = criterion(output, trg)
+
+            epoch_loss += loss.item()
+
+    return epoch_loss / len(iterator)
+
+
+# Finally, define a timing function.
+
+# In[24]:
+
+
+def epoch_time(start_time, end_time):
+    elapsed_time = end_time - start_time
+    elapsed_mins = int(elapsed_time / 60)
+    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
+    return elapsed_mins, elapsed_secs
 
 ######################################################################
 # .. note:: There are other forms of attention that work around the length
@@ -502,15 +536,17 @@ def indexesFromSentence(lang, sentence):
     return [lang.word2index[word] for word in sentence.split(' ')]
 
 
-def tensorFromSentence(lang, sentence):
+def tensorFromSentence(lang, sentence, length=None):
     indexes = indexesFromSentence(lang, sentence)
     indexes.append(EOS_token)
+    if length:
+        indexes = indexes + [0]*(length - len(indexes))
     return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
 
-def tensorsFromPair(pair):
-    input_tensor = tensorFromSentence(input_lang, pair[0])
-    target_tensor = tensorFromSentence(output_lang, pair[1])
+def tensorsFromPair(pair, length=None):
+    input_tensor = tensorFromSentence(input_lang, pair[0], length)
+    target_tensor = tensorFromSentence(output_lang, pair[1], length)
     return (input_tensor, target_tensor)
 
 
@@ -542,59 +578,6 @@ def tensorsFromPair(pair):
 #
 
 teacher_forcing_ratio = 0.5
-
-
-def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
-
-    encoder_optimizer.zero_grad()
-    decoder_optimizer.zero_grad()
-
-    input_length = input_tensor.size(0)
-    target_length = target_tensor.size(0)
-
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
-
-    loss = 0
-
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
-
-    decoder_input = torch.tensor([[SOS_token]], device=device)
-
-    decoder_hidden = encoder_hidden
-
-    use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-
-    if use_teacher_forcing:
-        # Teacher forcing: Feed the target as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            loss += criterion(decoder_output, target_tensor[di])
-            decoder_input = target_tensor[di]  # Teacher forcing
-
-    else:
-        # Without teacher forcing: use its own predictions as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            topv, topi = decoder_output.topk(1)
-            decoder_input = topi.squeeze().detach()  # detach from history as input
-
-            loss += criterion(decoder_output, target_tensor[di])
-            if decoder_input.item() == EOS_token:
-                break
-
-    loss.backward()
-
-    encoder_optimizer.step()
-    decoder_optimizer.step()
-
-    return loss.item() / target_length
-
 
 ######################################################################
 # This is a helper function to print time elapsed and estimated time
@@ -631,40 +614,20 @@ def timeSince(since, percent):
 # of examples, time so far, estimated time) and average loss.
 #
 
-def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(model, n_iters, criterion, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
-    plot_losses = []
-    print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
-
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    training_pairs = [tensorsFromPair(random.choice(pairs))
+    training_pairs = [tensorsFromPair(random.choice(pairs), length=None)
                       for i in range(n_iters)]
+
+    input_tensor, target_tensor = zip(*training_pairs)
+# def train(model, iterator, optimizer, criterion, clip):
+    for i in range(20):
+        loss = train(model, batch_data(input_tensor, target_tensor, 1, device, pbar=tqdm.tqdm(position=0)), optimizer, criterion, 1, loss_bar=tqdm.tqdm(position=1))
+
+        # print("Loss", loss)
+
     criterion = nn.NLLLoss()
-
-    for iter in range(1, n_iters + 1):
-        training_pair = training_pairs[iter - 1]
-        input_tensor = training_pair[0]
-        target_tensor = training_pair[1]
-
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion)
-        print_loss_total += loss
-        plot_loss_total += loss
-
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
-
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
-
-    showPlot(plot_losses)
+    # showPlot(plot_losses)
 
 
 ######################################################################
@@ -712,27 +675,32 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(input_tensor[ei],
                                                      encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+            # print(encoder_output, torch.nn.utils.rnn.pad_packed_sequence(encoder_output)[0].size())
+            encoder_outputs[ei] += torch.nn.utils.rnn.pad_packed_sequence(encoder_output)[0][0, 0]
 
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+        decoder_input = torch.tensor([[[SOS_token]]], device=device)  # SOS
 
         decoder_hidden = encoder_hidden
 
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
 
+        if DEBUG: print("STARTING")
         for di in range(max_length):
+            if DEBUG: print(decoder_input.size())
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
             decoder_attentions[di] = decoder_attention.data
             topv, topi = decoder_output.data.topk(1)
+            topv, topi = topv[0], topi[0]
+            if DEBUG: print("TOPS", topv, topi, output_lang.index2word[topi.item()], topi.squeeze())
             if topi.item() == EOS_token:
                 decoded_words.append('<EOS>')
                 break
             else:
                 decoded_words.append(output_lang.index2word[topi.item()])
 
-            decoder_input = topi.squeeze().detach()
+            decoder_input = topi.squeeze().detach().view(-1, 1, 1)
 
         return decoded_words, decoder_attentions[:di + 1]
 
@@ -771,42 +739,45 @@ def evaluateRandomly(encoder, decoder, n=10):
 #    evaluate, and continue training later. Comment out the lines where the
 #    encoder and decoder are initialized and run ``trainIters`` again.
 #
+INPUT_DIM = input_lang.n_words
+OUTPUT_DIM = output_lang.n_words
+ENC_EMB_DIM = 256
+DEC_EMB_DIM = 256
+ENC_HID_DIM = 512
+DEC_HID_DIM = 512
+ENC_DROPOUT = 0.5
+DEC_DROPOUT = 0.5
 
-hidden_size = 256
-encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+attn = Attention(ENC_HID_DIM, DEC_HID_DIM)
+enc = Encoder(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, ENC_DROPOUT)
+dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, DEC_DROPOUT, attn)
 
-trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
+model = Seq2Seq(enc, dec, device).to(device)
+model.apply(init_weights)
 
-######################################################################
-#
+print(f'The model has {count_parameters(model):,} trainable parameters')
+
+
+optimizer = optim.Adam(model.parameters())
+
+PAD_IDX = 3
+criterion = nn.CrossEntropyLoss(ignore_index = PAD_IDX)
+
+# hidden_size = 256
+# encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+# attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+
+trainIters(model, 75000, criterion, print_every=5000)
+
 
 evaluateRandomly(encoder1, attn_decoder1)
 
 
-######################################################################
 # Visualizing Attention
-# ---------------------
-#
-# A useful property of the attention mechanism is its highly interpretable
-# outputs. Because it is used to weight specific encoder outputs of the
-# input sequence, we can imagine looking where the network is focused most
-# at each time step.
-#
-# You could simply run ``plt.matshow(attentions)`` to see attention output
-# displayed as a matrix, with the columns being input steps and rows being
-# output steps:
-#
-
 output_words, attentions = evaluate(
     encoder1, attn_decoder1, "je suis trop froid .")
 plt.matshow(attentions.numpy())
 
-
-######################################################################
-# For a better viewing experience we will do the extra work of adding axes
-# and labels:
-#
 
 def showAttention(input_sentence, output_words, attentions):
     # Set up figure with colorbar
@@ -826,7 +797,6 @@ def showAttention(input_sentence, output_words, attentions):
 
     plt.show()
 
-
 def evaluateAndShowAttention(input_sentence):
     output_words, attentions = evaluate(
         encoder1, attn_decoder1, input_sentence)
@@ -842,28 +812,3 @@ evaluateAndShowAttention("elle est trop petit .")
 evaluateAndShowAttention("je ne crains pas de mourir .")
 
 evaluateAndShowAttention("c est un jeune directeur plein de talent .")
-
-
-######################################################################
-# Exercises
-# =========
-#
-# -  Try with a different dataset
-#
-#    -  Another language pair
-#    -  Human → Machine (e.g. IOT commands)
-#    -  Chat → Response
-#    -  Question → Answer
-#
-# -  Replace the embeddings with pre-trained word embeddings such as word2vec or
-#    GloVe
-# -  Try with more layers, more hidden units, and more sentences. Compare
-#    the training time and results.
-# -  If you use a translation file where pairs have two of the same phrase
-#    (``I am test \t I am test``), you can use this as an autoencoder. Try
-#    this:
-#
-#    -  Train as an autoencoder
-#    -  Save only the Encoder network
-#    -  Train a new Decoder for translation from there
-#
