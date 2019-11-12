@@ -20,23 +20,24 @@ from torch import optim
 # of examples, time so far, estimated time) and average loss.
 #
 
-def trainIters(model, n_iters, criterion, dataset, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(model, n_iters, criterion, dataset, print_every=1000, plot_every=100, learning_rate=0.01, input_lang=None, output_lang=None):
     start = time.time()
     training_pairs = [dataset.tensorsFromPair(random.choice(dataset.pairs), device=device)
                       for i in range(n_iters)]
 
     input_tensor, target_tensor = zip(*training_pairs)
 # def train(model, iterator, optimizer, criterion, clip):
-    for i in range(20):
-        batch_iterator = batch_data(input_tensor, target_tensor, batch_size=2048, device=device, pbar=tqdm.tqdm(position=0))
-        loss = train(model, iterator=batch_iterator, optimizer=optimizer, criterion=criterion, loss_bar=tqdm.tqdm(position=1))
+    for i in tqdm.trange(20):
+        batch_iterator = batch_data(input_tensor, target_tensor, batch_size=2048, device=device, pbar=tqdm.tqdm(position=1))
+        loss = train(model, iterator=batch_iterator, optimizer=optimizer, criterion=criterion, loss_bar=tqdm.tqdm(position=2),
+            input_lang=input_lang, output_lang=output_lang)
 
         # print("Loss", loss)
 
     criterion = nn.NLLLoss()
     # showPlot(plot_losses)
 
-def train(model, iterator, optimizer, criterion, loss_bar=None):
+def train(model, iterator, optimizer, criterion, loss_bar=None, input_lang=None, output_lang=None):
 
     model.train()
     epoch_loss = 0
@@ -49,12 +50,12 @@ def train(model, iterator, optimizer, criterion, loss_bar=None):
         samples += len(src)
 
         optimizer.zero_grad()
-        output = model(src, trg)
+        output = model(src, trg, 0.9)
         #trg = [trg sent len, batch size]
         #output = [trg sent len, batch size, output dim]
 
-        output = output[1:].view(-1, output.shape[-1])
-        trg = trg[1:].contiguous().view(-1)
+        output = output.view(-1, output.shape[-1])
+        trg = trg.contiguous().view(-1)
 
         #trg = [(trg sent len - 1) * batch size]
         #output = [(trg sent len - 1) * batch size, output dim]
@@ -64,11 +65,32 @@ def train(model, iterator, optimizer, criterion, loss_bar=None):
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         optimizer.step()
 
+        # print(batch[1], batch[1].size())
+
+        test_input = torch.stack([src.permute(1, 0)[0]]).permute(1, 0)
+        target_input = torch.stack([batch[1].permute(1, 0)[0]]).permute(1, 0)
+        test_output = model(test_input, torch.tensor([[trg[0].item()]], device=device), 0, True)
+
+        test_indeces = test_input.view(-1)
+        input_sentence = input_lang.get_sentence(test_indeces)
+
+        target_indeces = target_input.view(-1)
+        target_sentence = output_lang.get_sentence(target_indeces)
+
+        # print(test_output, test_output.size())
+        output_indeces = test_output.argmax(2)
+        output_sentence = output_lang.get_sentence(output_indeces)
+
         if loss_bar is not None:
             loss_bar.n = epoch_loss/samples
             loss_bar.write(str(epoch_loss/samples))
+            loss_bar.write(input_sentence)
+            loss_bar.write(target_sentence)
+            loss_bar.write(output_sentence)
             # loss_bar.total = max([loss_bar.total, loss.item()])
             loss_bar.update(0)
+        else:
+            print()
         epoch_loss += loss.item()
 
     return epoch_loss / samples
@@ -128,7 +150,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam(model.parameters())
 
-    PAD_IDX = 3
+    PAD_IDX = 2
     criterion = nn.CrossEntropyLoss(ignore_index = PAD_IDX)
 
-    trainIters(model, 75000, criterion, dataset=tmt, print_every=5000)
+    trainIters(model, 75000, criterion, dataset=tmt, print_every=5000, input_lang=input_lang, output_lang=output_lang)

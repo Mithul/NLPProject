@@ -42,7 +42,7 @@ class Lang:
         self.word2index = {}
         self.word2count = {}
         self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
-        self.n_words = 2  # Count SOS and EOS
+        self.n_words = 3  # Count SOS and EOS
 
     def addSentence(self, sentence):
         for word in sentence.split(' '):
@@ -58,7 +58,7 @@ class Lang:
             self.word2count[word] += 1
 
     def indexesFromSentence(self, sentence):
-        return [self.word2index[word] for word in sentence.split(' ')]
+        return [0] + [self.word2index[word] for word in sentence.split(' ')] + [1]
 
     def tensorFromSentence(self, sentence, device, length=None):
         indexes = self.indexesFromSentence(sentence)
@@ -68,6 +68,13 @@ class Lang:
             return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
         return torch.tensor(indexes, device=device)
+
+    def get_sentence(self, indeces):
+        words = []
+        for index in indeces:
+            words.append(self.index2word[index.item()])
+
+        return ' '.join(words)
 
 # input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
 # print(random.choice(pairs))

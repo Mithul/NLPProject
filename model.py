@@ -147,7 +147,7 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
 
-    def forward(self, src, trg, teacher_forcing_ratio = 0.5):
+    def forward(self, src, trg, teacher_forcing_ratio = 0.5, eval=False):
 
         #src = [src sent len, batch size]
         #trg = [trg sent len, batch size]
@@ -155,7 +155,10 @@ class Seq2Seq(nn.Module):
         #e.g. if teacher_forcing_ratio is 0.75 we use teacher forcing 75% of the time
 
         batch_size = src.shape[1]
-        max_len = trg.shape[0]
+        if not eval:
+            max_len = trg.shape[0]
+        else:
+            max_len = 10
         trg_vocab_size = self.decoder.output_dim
 
         #tensor to store decoder outputs
