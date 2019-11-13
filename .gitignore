@@ -1,0 +1,6 @@
+.data/
+.ipynb_checkpoints/
+__pycache__/
+dataset/data/__pycache__/
+dataset/data/eng-fra.txt
+dataset/data/names/
