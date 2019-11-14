@@ -28,40 +28,22 @@ def extract_fbank(wavfile,dtype):
 
 	return fbank
 
-from multiprocessing.pool import Pool as Pool
-
-def extract_file(wav_file,dtype,pbar=None):
-	fbank = extract_fbank(wav_file,dtype)
-	feat_file = '/Users/shobhanaganesh/Documents/NLP/project/en-de/features/'+dtype+'/'+wav_file.split('/')[-1]
-	np.save(feat_file, fbank)
-	if pbar:
-		pbar.update(1)
 
 if __name__ == '__main__':
 	features = []
 
-	#pool = Pool(4)
-
-	#works = []
 	pbar = tqdm.tqdm()
 
 	tfiles = 0
-	#dtype = 'dev'
+	
 	for dtype in ['dev','train','tst-COMMON','tst-HE']:
 		wavpath = path+dtype+'/wav/*'
 		wav_files = sorted(glob.glob(wavpath))
 		tfiles += len(wav_files)
 		for wav_file in wav_files:
-			#works.append(pool.apply_async(extract_file, (wav_file, dtype, pbar)))
-			 fbank = extract_fbank(wav_file,dtype)
-			 feat_file = '/Users/shobhanaganesh/Documents/NLP/project/en-de/features/'+dtype+'/'+wav_file.split('/')[-1].split('.wav')[0]
-			 np.save(feat_file, np.asarray(fbank))
+			fbank = extract_fbank(wav_file,dtype)
+			feat_file = path+'/features/'+dtype+'/'+wav_file.split('/')[-1].split('.wav')[0]
+			np.save(feat_file, np.asarray(fbank))
 
-	#print("Sent")
-	#pbar.total = tfiles
-	#for work in works:
-	#	work.get()
-
-	#pool.join()
-	#pool.close()
+	
 
