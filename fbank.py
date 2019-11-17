@@ -68,7 +68,7 @@ def extract_fbanks_from_yaml(yaml_file):
 
 		# SingleProc
 		fbank = extract_fbank_from_wav(wavfile, start, duration)
-		yield fbank
+		yield fbank, wavfile.split('/')[-1], start, duration
 
 	# for job in tqdm.tqdm(jobs):
 		# job.get()
@@ -88,7 +88,7 @@ def get_sentences(text_dir, lang):
 	l1_sentences = []
 	with open(os.path.join(text_dir, dataset_type + "." + lang)) as l1_file:
 		for line in l1_file:
-			yield line
+			yield line.strip()
 		# l1_sentence = l1_file.readline()
 	# return l1_sentences, l2_sentences
 
@@ -120,11 +120,13 @@ if __name__ == '__main__':
 			os.makedirs(feat_dir, exist_ok=True)
 			with open(feat_file, 'w') as out_file:
 				index = 0
-				for l1_sentence, l2_sentence, fbank in zip(l1_sentences, l2_sentences, fbanks):
+				for l1_sentence, l2_sentence, fbank_data in zip(l1_sentences, l2_sentences, fbanks):
 					# sentence, fbank = data
+					fbank, wavfile, start, duration = fbank_data
 					fbank_file = os.path.join(feat_dir, str(index) +".feat.npy")
 					np.save(fbank_file, np.asarray(fbank))
-					out_file.write(l1_sentence + "\t" + l2_sentence + "\t" + fbank_file + "\n")
+					relative_fbank_path = '/'.join(fbank_file.split('/')[-4:])
+					out_file.write(l1_sentence + "\t" + l2_sentence + "\t" + relative_fbank_path + "\t" + wavfile + "\t" + str(start) + "\t" + str(duration) + "\n")
 					# save_sentence_and_features(out_file, feat_dir, l1_sentence, l2_sentence, fbank)
 					index += 1
 			# np.save(feat_file, np.asarray(fbank))
