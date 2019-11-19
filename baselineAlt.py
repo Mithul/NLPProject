@@ -252,7 +252,6 @@ if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=True)
 	input_lang, output_lang, _ = mc_data.prepareData()
 	if DEBUG: print("DIM", output_lang.n_words)
-	b = mc_data.get_batch(batch_size=128)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
@@ -272,10 +271,12 @@ if __name__ == '__main__':
 		start_iter = checkpoint['iter']
 		loss = checkpoint['loss']
 		iters_per_epoch = checkpoint['iters_per_epoch']
+		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
 
 	for epoch in range(1000):
 		iter = 0
+		b = mc_data.get_batch(batch_size=128)
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			seq_optim.zero_grad()
 			# if DEBUG: print(speech_feats)
