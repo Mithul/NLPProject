@@ -8,9 +8,9 @@ from collections import defaultdict
 import torch
 
 EOS_token = 1
-SPACE_token = 3
 PAD_token = 2
-UNK_token = 2
+SPACE_token = 3
+UNK_token = 4
 
 def extract_fbank(wavfile):
 	fs, raw = wav.read(wavfile)
@@ -130,7 +130,7 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10):
+	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/train/feats/feat.tokenized.tsv")
 		batch_index = 0
@@ -146,8 +146,9 @@ class MUSTCData(object):
 			if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len:
 				featfile = os.path.join(data_directory, featfile)
 				speech_feats = np.load(featfile)
-				batch.append([speech_feats, l2_tokenized_s.strip().lower()])
-				batch_index += 1
+				if len(speech_feats) < max_frames:
+					batch.append([speech_feats, l2_tokenized_s.strip().lower()])
+					batch_index += 1
 
 	def prepareData(self, data_directory="./data", reverse=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)

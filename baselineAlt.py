@@ -1,5 +1,5 @@
 import numpy as np
-import random, tqdm
+import random, tqdm, os
 
 import torch
 import torch.nn.functional as F
@@ -9,6 +9,8 @@ from config import DEBUG, device
 from data.data import MUSTCData as Dataset
 from data.data import PAD_token, UNK_token
 from torch import optim
+
+from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = False
 
@@ -191,7 +193,7 @@ class Seq2Seq(nn.Module):
 		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
 
 		teacher_forcing_ratio = 1.0
-		# outputs=torch.zeros(trg.size(0),trg.size(1),trg.size(2), device=device)
+		outputs=torch.zeros(trg.size(1),trg.size(0), device=device)
 		input = trg[:,0]
 		if DEBUG: print("target size: ",trg.size())
 		loss = 0
@@ -203,12 +205,12 @@ class Seq2Seq(nn.Module):
 			output = self.decoder.forward(input)
 
 			#place predictions in a tensor holding predictions for each token
-			# outputs[:,t,:] = output
 			#decide if we are going to use teacher forcing or not
 			teacher_force = random.random() < teacher_forcing_ratio
 
 			#get the highest predicted token from our predictions
 			top1 = output.argmax(1)
+			outputs[t] = top1
 			if DEBUG: print("top1",top1,"output",output.size())
 			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
@@ -222,7 +224,7 @@ class Seq2Seq(nn.Module):
 
 		print("LOSS", loss)
 
-		return loss
+		return outputs.permute(1, 0), loss
 		# loss.backward()
 		# self.enc_optim.step()
 		# self.dec_optim.step()
@@ -250,38 +252,79 @@ if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=True)
 	input_lang, output_lang, _ = mc_data.prepareData()
 	if DEBUG: print("DIM", output_lang.n_words)
-	b = mc_data.get_batch(batch_size=80)
+	b = mc_data.get_batch(batch_size=128)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	for speech_feats, sentence_feats in get_batch(b, output_lang):
-		seq_optim.zero_grad()
-		# if DEBUG: print(speech_feats)
-		# if DEBUG: print(sentence)
-		# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
-		# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
+	writer = SummaryWriter("Baseline")
 
-		if DEBUG: print("START")
-		f = speech_feats#torch.tensor(speech_feats, device=device)
-		# f = f.view(3,1,qwe,asd)
-		# qwe = f.size(0)
-		# asd = f.size(1)
-		# f = torch.cat((f,f,f))
-		# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
-		trg= sentence_feats
-		# tr=[]
-		# for t in trg:
-		# 	tmp = [0]*64
-		# 	tmp[ord(t)-ord('a')]= 1
-		# 	tr.append(tmp)
-		# trg = [tr[:],tr[:],tr[:]]
-		# trg = torch.FloatTensor(trg)
-		print("f",f.size())
-		print("trg",trg.size())
+	SAVE_PATH = "Baseline.model"
 
-		if DEBUG: print("F", f.size())
+	iter = 0
 
-		loss = seq(f,trg)
-		loss.backward()
-		seq_optim.step()
+	iters_per_epoch = 0
+	if os.path.exists(SAVE_PATH):
+		checkpoint = torch.load(SAVE_PATH)
+		seq.load_state_dict(checkpoint['model_state_dict'])
+		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+		epoch = checkpoint['epoch']
+		start_iter = checkpoint['iter']
+		loss = checkpoint['loss']
+		iters_per_epoch = checkpoint['iters_per_epoch']
+
+
+	for epoch in range(1000):
+		iter = 0
+		for speech_feats, sentence_feats in get_batch(b, output_lang):
+			seq_optim.zero_grad()
+			# if DEBUG: print(speech_feats)
+			# if DEBUG: print(sentence)
+			# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
+			# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
+
+			if DEBUG: print("START")
+			f = speech_feats#torch.tensor(speech_feats, device=device)
+			# f = f.view(3,1,qwe,asd)
+			# qwe = f.size(0)
+			# asd = f.size(1)
+			# f = torch.cat((f,f,f))
+			# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
+			trg= sentence_feats
+			# tr=[]
+			# for t in trg:
+			# 	tmp = [0]*64
+			# 	tmp[ord(t)-ord('a')]= 1
+			# 	tr.append(tmp)
+			# trg = [tr[:],tr[:],tr[:]]
+			# trg = torch.FloatTensor(trg)
+			print("f",f.size())
+			print("trg",trg.size())
+
+			if DEBUG: print("F", f.size())
+
+			outputs, loss = seq(f,trg)
+			writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
+			for output,trgt in zip(outputs,trg):
+				writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+				writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+				print(output_lang.get_sentence(output))
+				print(output_lang.get_sentence(trgt))
+				break
+
+			loss.backward()
+			seq_optim.step()
+
+			iter += 1
+
+			if iter%50 == 0:
+				torch.save({
+		            'epoch': epoch,
+		            'iter': iter,
+					'iters_per_epoch': iters_per_epoch,
+		            'model_state_dict': seq.state_dict(),
+		            'optimizer_state_dict': seq_optim.state_dict(),
+		            'loss': loss,
+		            }, SAVE_PATH)
+
+		iters_per_epoch = iter
