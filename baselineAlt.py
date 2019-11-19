@@ -237,7 +237,7 @@ def get_batch(iterator, lang):
 		speech_batch = []
 		sentence_batch = []
 		for speech_feats, sentence in batch:
-			speech_batch.append(torch.tensor(speech_feats, device=device))
+			speech_batch.append(torch.tensor(speech_feats, dtype=torch.float, device=device))
 			x = lang.tensorFromSentence(sentence, device)
 			sentence_batch.append(x)
 
@@ -253,10 +253,10 @@ if __name__ == '__main__':
 	b = mc_data.get_batch(batch_size=80)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
-	seq_optim.zero_grad()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
 	for speech_feats, sentence_feats in get_batch(b, output_lang):
+		seq_optim.zero_grad()
 		# if DEBUG: print(speech_feats)
 		# if DEBUG: print(sentence)
 		# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
@@ -277,8 +277,8 @@ if __name__ == '__main__':
 		# 	tr.append(tmp)
 		# trg = [tr[:],tr[:],tr[:]]
 		# trg = torch.FloatTensor(trg)
-		if DEBUG: print("f",f.size())
-		if DEBUG: print("trg",trg.size())
+		print("f",f.size())
+		print("trg",trg.size())
 
 		if DEBUG: print("F", f.size())
 
