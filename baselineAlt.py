@@ -23,6 +23,7 @@ class Encoder(nn.Module):
 		self.output_dim = output_dim
 		self.n_layers = n_layers
 		self.conv1 = nn.Conv2d(self.input_channels,32,3,2,1)
+		self.bn = nn.BatchNorm2d(32)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
 		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
@@ -35,9 +36,11 @@ class Encoder(nn.Module):
 		# input = input.float()
 		batch_size = input.size(0)
 		x = self.conv1(input)
+		x = self.bn(x)
 		#x : [batch_size, channels(32), seq_len/2, feature_size]
 		if DEBUG: print("shape1",x.size())
 		x = self.conv2(x)
+		x = self.bn(x)
 		#x : [batch_size, channels(32), seq_len/4, feature_size]
 		if DEBUG: print("shape2",x.size())
 		x = x.permute(2,0,1,3)
@@ -224,7 +227,7 @@ class Seq2Seq(nn.Module):
 
 		print("LOSS", loss)
 
-		return outputs.permute(1, 0), loss
+		return outputs.permute(1, 0), loss/float(batch_size)
 		# loss.backward()
 		# self.enc_optim.step()
 		# self.dec_optim.step()
@@ -276,6 +279,7 @@ if __name__ == '__main__':
 
 	for epoch in range(1000):
 		iter = 0
+		loss_checkpoint = 200000
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			seq_optim.zero_grad()
 			# if DEBUG: print(speech_feats)
@@ -317,7 +321,9 @@ if __name__ == '__main__':
 
 			iter += 1
 
-			if iter%50 == 0:
+			#if iter%50 == 0:
+			if loss_checkpoint>loss.item()
+				loss_checkpoint = loss.item()
 				torch.save({
 		            'epoch': epoch,
 		            'iter': iter,
@@ -326,5 +332,14 @@ if __name__ == '__main__':
 		            'optimizer_state_dict': seq_optim.state_dict(),
 		            'loss': loss,
 		            }, SAVE_PATH)
+
+			else:
+				checkpoint = torch.load(SAVE_PATH)
+				seq.load_state_dict(checkpoint['model_state_dict'])
+				seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+				epoch = checkpoint['epoch']
+				start_iter = checkpoint['iter']
+				loss = checkpoint['loss']
+				iters_per_epoch = checkpoint['iters_per_epoch']		
 
 		iters_per_epoch = iter
