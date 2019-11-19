@@ -1,11 +1,16 @@
-import convlstmAlt
 import numpy as np
+import random, tqdm
+
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-import random
 
+from config import DEBUG, device
+from data.data import MUSTCData as Dataset
+from data.data import PAD_token, UNK_token
 from torch import optim
+
+DEBUG = False
 
 class Encoder(nn.Module):
 	def __init__(self,input_dim,input_channels,hidden_dim,output_dim,n_layers):
@@ -17,38 +22,42 @@ class Encoder(nn.Module):
 		self.n_layers = n_layers
 		self.conv1 = nn.Conv2d(self.input_channels,32,3,2,1)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
-		self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
-		self.LSTM = nn.LSTM(32*20,self.hidden_dim,self.n_layers,bidirectional=True)
+		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
+		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
 		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
 
-	def forward(self,input):
-		#input = input.unsqueeze(0) 
-		print(input.size())
-		input = input.float()
+	def forward(self,input, h, c):
+		input = input.unsqueeze(1)
+		#input : [batch_size, channels(1), seq_len, feature_size]
+		if DEBUG: print(input.size())
+		# input = input.float()
 		batch_size = input.size(0)
 		x = self.conv1(input)
-		print("shape1",x.size())
+		#x : [batch_size, channels(32), seq_len/2, feature_size]
+		if DEBUG: print("shape1",x.size())
 		x = self.conv2(x)
-		print("shape2",x.size())
+		#x : [batch_size, channels(32), seq_len/4, feature_size]
+		if DEBUG: print("shape2",x.size())
 		x = x.permute(2,0,1,3)
+		#x : [seq_len/4, batch_size, channels(32), feature_size]
 		x = x.contiguous().view(x.size(0),x.size(1),-1)
-		print("shape3",x.size())
-		h = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim)
-		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim)
+		#x : [seq_len/4, batch_size, channels(32) x feature_size]
+		if DEBUG: print("shape3",x.size())
+
 		outputs,(h,c) =  self.LSTM(x,(h,c))
-		#print('sum',torch.sum(outputs[-1]-torch.cat((h[-2, :, :],h[-1, :, :]))))
-		print("shapeOut",outputs.size())
-		print("shapeH",h.size())
-		print("shapeC",c.size())
+		#if DEBUG: print('sum',torch.sum(outputs[-1]-torch.cat((h[-2, :, :],h[-1, :, :]))))
+		if DEBUG: print("shapeOut",outputs.size())
+		if DEBUG: print("shapeH",h.size())
+		if DEBUG: print("shapeC",c.size())
 		newOutput = []
 		for out in outputs:
 			newOutput.append(F.relu(self.fc1(out)))
 		out = torch.stack(newOutput)
-		print("shapeOut2",out.size())
+		if DEBUG: print("shapeOut2",out.size())
 		return out,h,c
 		'''
 		out = F.relu((self.fc1(h[-2, :, :] + h[-1, :, :])))
-		print("shapeOut2",out.size())'''
+		if DEBUG: print("shapeOut2",out.size())'''
 		#batch normalization]
 
 
@@ -62,43 +71,45 @@ class Attention(nn.Module):
 	def forward(self,enc_outputs,dec_output):
 		#decoder op = (batchxd_hidden_dim)
 		#encoder ops = (Lxbatchxe_hidden_dim)
-		print("enc_outputs",enc_outputs.size())
-		print("dec_outputs",dec_output.size())
+		if DEBUG: print("enc_outputs",enc_outputs.size())
+		if DEBUG: print("dec_outputs",dec_output.size())
 		alphas = []
 		ad_ok = self.ad(dec_output)
 		ad_ok = ad_ok.unsqueeze(2)
-		print("ad-ok",ad_ok.size())
-		
+		if DEBUG: print("ad-ok",ad_ok.size())
+
 		for i in range(enc_outputs.size(0)):
 			ae_hl = self.ae(enc_outputs[i,:,:])
 			ae_hl = ae_hl.unsqueeze(1)
-			#print("ae-hl",ae_hl.size())
+			#if DEBUG: print("ae-hl",ae_hl.size())
 			alphas.append(torch.bmm(ae_hl,ad_ok))
 		alphas = torch.stack(alphas)
 		alphas = alphas.squeeze(-1)
 		alphas = alphas.squeeze(-1)
-		print("alphas: ",alphas.size())
+		if DEBUG: print("alphas: ",alphas.size())
 		alphas = nn.Softmax(alphas)
 		alphas = alphas.dim
 		alphas = alphas.permute(1,0)
 		alphas = alphas.unsqueeze(1)
-		print("alphas: ",alphas.size())
+		if DEBUG: print("alphas: ",alphas.size())
 		enc_outputs = enc_outputs.permute(1,0,2)
-		print("enc_outputs",enc_outputs.size())
+		if DEBUG: print("enc_outputs",enc_outputs.size())
 		context = torch.zeros(enc_outputs.size(2))
 		context = torch.bmm(alphas,enc_outputs)
 		context = context.squeeze(1)
-		print ("context", context.size())
+		if DEBUG: print ("context", context.size())
 		return context
 
 class Decoder(nn.Module):
-	def __init__(self,output_dim,dec_hidden_dim,enc_hidden_dim,attention_dim,n_layers):
+	def __init__(self,output_dim,dec_hidden_dim,enc_hidden_dim,attention_dim,n_layers,input_dim):
 		super(Decoder,self).__init__()
+		self.embed_dim = 64
+		self.embedding = nn.Embedding(input_dim, self.embed_dim)
 		self.output_dim = output_dim
 		self.dec_hidden_dim = dec_hidden_dim
 		self.attention_dim = attention_dim
 		self.n_layers = n_layers
-		self.first_LSTM = nn.LSTM(self.output_dim+self.attention_dim,self.dec_hidden_dim,1,bidirectional=False)
+		self.first_LSTM = nn.LSTM(self.embed_dim+self.attention_dim,self.dec_hidden_dim,1,bidirectional=False)
 		self.LSTM = nn.LSTM(self.dec_hidden_dim+self.attention_dim,self.dec_hidden_dim,self.n_layers-1,bidirectional=False)
 		self.hidden = None
 		self.cell_state = None
@@ -108,13 +119,17 @@ class Decoder(nn.Module):
 
 
 	def forward(self,input):
-		print("Input size ",input.size())
+		input = self.embedding(input)#.view(input.size(0), -1)
+		if DEBUG: print("Input size ", input, input.size())
+		if DEBUG: print("Context size ", self.context, self.context.size())
 		concat_input = torch.cat((input,self.context),dim=1)
 		concat_input = concat_input.unsqueeze(0)
-		print("Concatenated size: ",concat_input.size())
-		o1 , (h1,c1) = self.first_LSTM(concat_input,(self.hidden[0,:,:].unsqueeze(0),self.cell_state[0,:,:].unsqueeze(0)))
+		if DEBUG: print("Concatenated size: ",concat_input.size())
+		first_h, first_c = self.hidden[0,:,:].unsqueeze(0),self.cell_state[0,:,:].unsqueeze(0)
+		if DEBUG: print("Hiddens size: ",first_h.size(), first_c.size())
+		o1 , (h1,c1) = self.first_LSTM(concat_input,(first_h, first_c ))
 		o1 = o1.squeeze(0)
-		print("o1 size ",o1.size(),"hidden size: ",self.hidden.size())
+		if DEBUG: print("o1 size ",o1.size(),"hidden size: ",self.hidden.size())
 		self.context = self.attn.forward(self.enc_outputs,o1)
 		concat_input = torch.cat((o1,self.context),dim=1)
 		concat_input = concat_input.unsqueeze(0)
@@ -125,52 +140,60 @@ class Decoder(nn.Module):
 		concat_input = torch.cat((o,self.context),dim=1)
 		out = self.linear(concat_input)
 		#out = nn.Softmax(out)
-		print("out",out.size())
+		if DEBUG: print("out",out.size())
 		return out
 
 
-	def initStates(self,hidden,cell_state,enc_outputs):
+	def initStates(self,hidden,cell_state,enc_outputs, device):
 		self.hidden = hidden
 		self.cell_state = cell_state
 		self.enc_outputs = enc_outputs
-		zeroes = torch.zeros(self.enc_outputs.size(1),self.dec_hidden_dim)
+		zeroes = torch.zeros(self.enc_outputs.size(1),self.dec_hidden_dim, device=device)
 		self.context = self.attn.forward(self.enc_outputs,zeroes)
 
 
 
 
-class Seq2Seq:
-	def __init__(self,src):
-		self.encoder = Encoder(src.size(3),1,256,512,4)
-		self.decoder = Decoder(64,256,512,512,4)
-		self.loss = nn.CrossEntropyLoss()
-		self.enc_optim = optim.Adam(self.encoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
-		self.dec_optim = optim.Adam(self.decoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
+class Seq2Seq(nn.Module):
+	def __init__(self, target_dim):
+		super(Seq2Seq, self).__init__()
+		self.n_layers = 4
+		self.hidden_dim = 256
+		self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
+		self.decoder = Decoder(target_dim, self.hidden_dim, self.hidden_dim*2, self.hidden_dim*2, self.n_layers, target_dim) # output_dim, dec_hidden_dim, enc_hidden_dim, attention_dim, n_layers
+		self.loss = nn.CrossEntropyLoss(ignore_index = PAD_token)
+		# self.enc_optim = optim.Adam(self.encoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
+		# self.dec_optim = optim.Adam(self.decoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 
 
-	def train(self,src,trg):
+	def forward(self,src,trg):
 		#src #batch x chn x n_frames x filters
 		#trg #batch x trg_len x embedding_dim
 
-		self.enc_optim.zero_grad()
-		self.dec_optim.zero_grad()
+		# self.enc_optim.zero_grad()
+		# self.dec_optim.zero_grad()
 
-		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src)
-		print("hidden ",enc_hidden.size())
-		dec_init_hidden = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2))
-		dec_init_cell_state = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2))
+		batch_size = src.size(0)
+
+		h = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
+		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
+
+		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
+		if DEBUG: print("hidden ",enc_hidden.size())
+		dec_init_hidden = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
+		dec_init_cell_state = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
 		j = 0
 		for i in range(0,enc_hidden.size(0),2):
 			dec_init_hidden[j] = enc_hidden[i,:,:] + enc_hidden[i+1,:,:]
 			dec_init_cell_state[j] = enc_cell_state[i,:,:] + enc_cell_state[i+1,:,:]
 			j = j+1
 
-		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs)
-		
+		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
+
 		teacher_forcing_ratio = 1.0
-		outputs=torch.zeros(trg.size(0),trg.size(1),trg.size(2))
-		input = trg[:,0,:]
-		print("target size: ",trg.size())
+		# outputs=torch.zeros(trg.size(0),trg.size(1),trg.size(2), device=device)
+		input = trg[:,0]
+		if DEBUG: print("target size: ",trg.size())
 		loss = 0
 		for t in range(1, trg.size(1)):
 
@@ -180,47 +203,85 @@ class Seq2Seq:
 			output = self.decoder.forward(input)
 
 			#place predictions in a tensor holding predictions for each token
-			outputs[:,t,:] = output
+			# outputs[:,t,:] = output
 			#decide if we are going to use teacher forcing or not
 			teacher_force = random.random() < teacher_forcing_ratio
 
 			#get the highest predicted token from our predictions
 			top1 = output.argmax(1)
-			print("top1",top1,"output",output.size())
-			print("outputs :",outputs.size(),"Targets: ",trg.size())
+			if DEBUG: print("top1",top1,"output",output.size())
+			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
 			#if teacher forcing, use actual next token as next input
 			#if not, use predicted token
-			input = trg[:,t,:] if teacher_force else top1
+			input = trg[:,t] if teacher_force else top1
+			if DEBUG: print("op/trg", output[1:,:].size(), trg[1:,:].size())
 
-			loss += self.loss(output[1:,:],trg[1:,:].long())
+			loss += self.loss(output[1:,:],trg[1:,t].long())
+			if DEBUG: print("LOSS", loss)
 
-		
-		loss.backward()
-		self.enc_optim.step()
-		self.dec_optim.step()
+		print("LOSS", loss)
+
+		return loss
+		# loss.backward()
+		# self.enc_optim.step()
+		# self.dec_optim.step()
 
 		#return outputs
 
+	def count_parameters(self):
+		return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-f = np.load('/Users/shobhanaganesh/Documents/NLP/project/en-de/features/dev/ted_767.npy')
-f = torch.tensor(f)
-qwe = f.size(0)
-asd = f.size(1)
-f = torch.cat((f,f,f))
-f = f.view(3,1,qwe,asd)
-trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
-trg= list(trg)
-tr=[]
-for t in trg:
-	tmp = [0]*64
-	tmp[ord(t)-ord('a')]= 1
-	tr.append(tmp)
-trg = [tr[:],tr[:],tr[:]]
-trg = torch.FloatTensor(trg)
-print("trg",trg.size())
+def get_batch(iterator, lang):
+	for batch in tqdm.tqdm(iterator):
+		speech_batch = []
+		sentence_batch = []
+		for speech_feats, sentence in batch:
+			speech_batch.append(torch.tensor(speech_feats, device=device))
+			x = lang.tensorFromSentence(sentence, device)
+			sentence_batch.append(x)
 
-print("F", f.size())
-seq = Seq2Seq(f)
-seq.train(f,trg)
+		speech_batch = torch.nn.utils.rnn.pad_sequence(speech_batch, batch_first=True, padding_value=PAD_token)
+		sentence_batch = torch.nn.utils.rnn.pad_sequence(sentence_batch, batch_first=True, padding_value=PAD_token)
+		yield speech_batch, sentence_batch
 
+
+if __name__ == '__main__':
+	mc_data = Dataset('en', 'de', character_level=True)
+	input_lang, output_lang, _ = mc_data.prepareData()
+	if DEBUG: print("DIM", output_lang.n_words)
+	b = mc_data.get_batch(batch_size=80)
+	seq = Seq2Seq(output_lang.n_words).to(device)
+	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
+	seq_optim.zero_grad()
+	print(f'The model has {seq.count_parameters():,} trainable parameters')
+
+	for speech_feats, sentence_feats in get_batch(b, output_lang):
+		# if DEBUG: print(speech_feats)
+		# if DEBUG: print(sentence)
+		# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
+		# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
+
+		if DEBUG: print("START")
+		f = speech_feats#torch.tensor(speech_feats, device=device)
+		# f = f.view(3,1,qwe,asd)
+		# qwe = f.size(0)
+		# asd = f.size(1)
+		# f = torch.cat((f,f,f))
+		# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
+		trg= sentence_feats
+		# tr=[]
+		# for t in trg:
+		# 	tmp = [0]*64
+		# 	tmp[ord(t)-ord('a')]= 1
+		# 	tr.append(tmp)
+		# trg = [tr[:],tr[:],tr[:]]
+		# trg = torch.FloatTensor(trg)
+		if DEBUG: print("f",f.size())
+		if DEBUG: print("trg",trg.size())
+
+		if DEBUG: print("F", f.size())
+
+		loss = seq(f,trg)
+		loss.backward()
+		seq_optim.step()

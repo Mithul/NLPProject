@@ -3,11 +3,14 @@ import numpy as np
 import python_speech_features as feats
 import scipy.io.wavfile as wav
 
+from collections import defaultdict
+
 import torch
 
 EOS_token = 1
 SPACE_token = 3
 PAD_token = 2
+UNK_token = 2
 
 def extract_fbank(wavfile):
 	fs, raw = wav.read(wavfile)
@@ -18,10 +21,11 @@ def extract_fbank(wavfile):
 class CharLang:
 	def __init__(self, name):
 		self.name = name
-		self.word2index = {" ": SPACE_token}
+		self.word2index = defaultdict(lambda: UNK_token)
+		self.word2index[" "] = SPACE_token
 		self.word2count = {}
-		self.index2word = {0: "SOS", EOS_token: "EOS", PAD_token: "PAD", SPACE_token: " "}
-		self.n_words = 4  # Count SOS and EOS
+		self.index2word = {0: "SOS", EOS_token: "EOS", PAD_token: "PAD", SPACE_token: " ", UNK_token: "UNK"}
+		self.n_words = 5  # Count SOS and EOS
 
 	def addSentence(self, sentence):
 		for word in sentence.split(' '):
@@ -39,6 +43,7 @@ class CharLang:
 				self.word2count[char] += 1
 
 	def indexesFromSentence(self, sentence):
+		# print(sentence)
 		return [0,3] + [self.word2index[char] for char in sentence]
 
 	def tensorFromSentence(self, sentence, device, length=None):
@@ -49,7 +54,7 @@ class CharLang:
 			indexes = indexes + [0]*(length - len(indexes))
 			return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
-		return torch.tensor(indexes, device=device)
+		return torch.tensor(indexes, dtype=torch.long, device=device)
 
 	def get_sentence(self, indeces):
 		chars = []
@@ -61,10 +66,10 @@ class CharLang:
 class Lang:
 	def __init__(self, name):
 		self.name = name
-		self.word2index = {}
+		self.word2index = defaultdict(lambda: UNK_token)
 		self.word2count = {}
-		self.index2word = {0: "SOS", EOS_token: "EOS", PAD_token: "PAD"}
-		self.n_words = 3  # Count SOS and EOS
+		self.index2word = {0: "SOS", EOS_token: "EOS", PAD_token: "PAD", UNK_token: "UNK"}
+		self.n_words = 4  # Count SOS and EOS
 
 	def addSentence(self, sentence):
 		for word in sentence.split(' '):
@@ -125,20 +130,26 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1):
-		batch = []
+	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/train/feats/feat.tokenized.tsv")
+		batch_index = 0
+		batch = []
 		for line in open(feats):
-			batch_index = 0
-			while batch_index < batch_size:
-				l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
-				featfile = os.path.join(data_directory, featfile)
-				batch.append([np.load(featfile), l2_tokenized_s.strip().lower()])
-				batch_index += 1
-			yield batch
+			if not batch_index < batch_size:
+				yield batch
+				batch_index = 0
+				batch = []
+				# break
 
-	def prepareData(self, data_directory="./", reverse=False):
+			l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
+			if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len:
+				featfile = os.path.join(data_directory, featfile)
+				speech_feats = np.load(featfile)
+				batch.append([speech_feats, l2_tokenized_s.strip().lower()])
+				batch_index += 1
+
+	def prepareData(self, data_directory="./data", reverse=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		words_file = os.path.join(data_directory, self.l2 + ".words")
 		with open(words_file) as f:
