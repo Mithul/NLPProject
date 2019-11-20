@@ -23,6 +23,8 @@ class Encoder(nn.Module):
 		self.output_dim = output_dim
 		self.n_layers = n_layers
 		self.conv1 = nn.Conv2d(self.input_channels,32,3,2,1)
+		# self.bn = nn.BatchNorm2d(32)
+		# self.bn2 = nn.BatchNorm2d(32)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
 		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
@@ -35,9 +37,11 @@ class Encoder(nn.Module):
 		# input = input.float()
 		batch_size = input.size(0)
 		x = self.conv1(input)
+		# x = self.bn(x)
 		#x : [batch_size, channels(32), seq_len/2, feature_size]
 		if DEBUG: print("shape1",x.size())
 		x = self.conv2(x)
+		# x = self.bn2(x)
 		#x : [batch_size, channels(32), seq_len/4, feature_size]
 		if DEBUG: print("shape2",x.size())
 		x = x.permute(2,0,1,3)
@@ -222,6 +226,7 @@ class Seq2Seq(nn.Module):
 			loss += self.loss(output[1:,:],trg[1:,t].long())
 			if DEBUG: print("LOSS", loss)
 
+		loss = loss/float(batch_size)
 		print("LOSS", loss)
 
 		return outputs.permute(1, 0), loss
@@ -263,13 +268,38 @@ if __name__ == '__main__':
 	iter = 0
 
 	iters_per_epoch = 0
+
+	loss_checkpoint = 20000
+	start_iter = None
+
 	if os.path.exists(SAVE_PATH):
 		checkpoint = torch.load(SAVE_PATH)
-		seq.load_state_dict(checkpoint['model_state_dict'])
-		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+		state_dict = checkpoint['model_state_dict']
+		for key, val in seq.state_dict().items():
+			if key not in state_dict:
+				print("Missing model params for", key, "will reinitialize layer with", val)
+				state_dict[key] = val
+		for key, val in list(state_dict.items()):
+			if key not in seq.state_dict():
+				del state_dict[key]
+
+		optim_state_dict = checkpoint['optimizer_state_dict']
+		print(optim_state_dict.keys())
+		for key, val in seq_optim.state_dict().items():
+			if key not in state_dict:
+				print("Missing model params for", key, "will reinitialize layer with", val)
+				optim_state_dict[key] = val
+
+		for key, val in list(optim_state_dict.items()):
+			if key not in seq_optim.state_dict():
+				del optim_state_dict[key]
+
+		seq.load_state_dict(state_dict)
+		seq_optim.load_state_dict(optim_state_dict)
 		epoch = checkpoint['epoch']
 		start_iter = checkpoint['iter']
 		loss = checkpoint['loss']
+		loss_checkpoint = checkpoint['loss']
 		iters_per_epoch = checkpoint['iters_per_epoch']
 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
@@ -277,7 +307,15 @@ if __name__ == '__main__':
 	for epoch in range(1000):
 		iter = 0
 		b = mc_data.get_batch(batch_size=128)
+
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
+			if start_iter is not None:
+				if start_iter > iter:
+					iter += 1
+					continue
+				if start_iter == iter:
+					start_iter = None
+
 			seq_optim.zero_grad()
 			# if DEBUG: print(speech_feats)
 			# if DEBUG: print(sentence)
@@ -318,7 +356,8 @@ if __name__ == '__main__':
 
 			iter += 1
 
-			if iter%50 == 0:
+			if iter%50 == 0 or (loss_checkpoint > loss.item() and iter%10 == 0):
+				loss_checkpoint = loss.item()
 				torch.save({
 		            'epoch': epoch,
 		            'iter': iter,
@@ -327,5 +366,16 @@ if __name__ == '__main__':
 		            'optimizer_state_dict': seq_optim.state_dict(),
 		            'loss': loss,
 		            }, SAVE_PATH)
+
+			# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
+			# 	if os.path.exists(SAVE_PATH):
+			# 		checkpoint = torch.load(SAVE_PATH)
+			# 		seq.load_state_dict(checkpoint['model_state_dict'])
+			# 		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+			# 		epoch = checkpoint['epoch']
+			# 		start_iter = checkpoint['iter']
+			# 		loss = checkpoint['loss']
+			# 		iters_per_epoch = checkpoint['iters_per_epoch']
+			# 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
 		iters_per_epoch = iter

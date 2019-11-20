@@ -1,4 +1,4 @@
-import os
+import os, tqdm
 import numpy as np
 import python_speech_features as feats
 import scipy.io.wavfile as wav
@@ -130,16 +130,50 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600):
+	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600, buffer_factor=8, sort_len=True):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/train/feats/feat.tokenized.tsv")
 		batch_index = 0
+		batches = []
 		batch = []
-		for line in open(feats):
+
+		def chunks(a, n):
+			"""Yield successive n-sized chunks from l."""
+			n = max(1, n)
+			return (a[i:i+n] for i in range(0, len(a), n))
+
+		for i, line in enumerate(open(feats)):
 			if not batch_index < batch_size:
-				yield batch
+				# yield batch
+				batches.append(batch)
 				batch_index = 0
 				batch = []
+				if len(batches) >= buffer_factor:
+					if not sort_len:
+						for batch in batches:
+							yield batch
+					else:
+						all_speech_feats = []
+						all_sentences = []
+						for batch in batches:
+							for speech_feat, sentence in batch:
+								all_speech_feats.append(speech_feat)
+								all_sentences.append(sentence)
+
+						# all_speech_feats = sorted(all_speech_feats, key=lambda d: len(d))
+						# all_sentences = sorted(all_sentences, key=lambda d: len(d))
+						# print(list(map(lambda d: len(d), all_speech_feats)))
+						# print(list(map(lambda d: len(d), all_sentences)))
+
+						combined_data = list(zip(all_speech_feats, all_sentences))
+						combined_data = list(sorted(combined_data, key=lambda d: [len(d[1]), len(d[0])]))
+						batches = chunks(combined_data, batch_size)
+						for batch in batches:
+							yield batch
+						# print(i, len(all_speech_feats))
+
+					batches = []
+
 				# break
 
 			l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
@@ -168,12 +202,16 @@ class MUSTCData(object):
 if __name__ == '__main__':
 	mc_data = MUSTCData('en', 'de', character_level=False)
 	input_lang, output_lang, _ = mc_data.prepareData(data_directory="./")
-	b = mc_data.get_batch(data_directory="./", batch_size=1)
-	batch = next(b)
-	for speech_feats, sentence in batch:
-		print(speech_feats)
-		print(sentence)
-		print(output_lang.tensorFromSentence(sentence, 'cpu'))
-		print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, 'cpu')))
+	b = mc_data.get_batch(data_directory="./", batch_size=128)
+	for batch in tqdm.tqdm(b):
+		# print()
+		# batch = next(b)
+		for speech_feats, sentence in batch:
+			# print(speech_feats)
+			# print(sentence)
+			# print(len(speech_feats), len(sentence.split(" ")))
+			# print(output_lang.tensorFromSentence(sentence, 'cpu'))
+			# print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, 'cpu')))
+			pass
 	# i, o, p = yn_data.prepareData()
 	# print(yn_data.tensorsFromPair(p[0], 'cuda')[0].size())
