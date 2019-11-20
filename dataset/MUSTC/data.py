@@ -120,9 +120,10 @@ class WavData(object):
 		return "WAV_DATA"
 
 class MUSTCData(object):
-	def __init__(self, l1, l2, character_level=False):
+	def __init__(self, l1, l2, dataset_type = "train", character_level=False):
 		self.l1 = l1
 		self.l2 = l2
+		self.dataset_type = dataset_type
 		self.character_level = character_level
 		self.input_lang = WavData(l1)
 		if self.character_level:
@@ -132,7 +133,7 @@ class MUSTCData(object):
 
 	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600, buffer_factor=8, sort_len=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
-		feats = os.path.join(data_directory, "features/train/feats/feat.tokenized.tsv")
+		feats = os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")
 		batch_index = 0
 		batches = []
 		batch = []
@@ -202,16 +203,27 @@ class MUSTCData(object):
 if __name__ == '__main__':
 	mc_data = MUSTCData('en', 'de', character_level=False)
 	input_lang, output_lang, _ = mc_data.prepareData(data_directory="./")
-	b = mc_data.get_batch(data_directory="./", batch_size=128)
+	b = mc_data.get_batch(data_directory="./", batch_size=2)
 	for batch in tqdm.tqdm(b):
 		# print()
 		# batch = next(b)
 		for speech_feats, sentence in batch:
-			# print(speech_feats)
-			# print(sentence)
+			print(speech_feats)
+			print(sentence)
 			# print(len(speech_feats), len(sentence.split(" ")))
 			# print(output_lang.tensorFromSentence(sentence, 'cpu'))
 			# print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, 'cpu')))
 			pass
+		break
+
+	mc_dev_data = MUSTCData('en', 'de', dataset_type="dev", character_level=False)
+	b_dev = mc_data.get_batch(data_directory="./", batch_size=2)
+	for batch in tqdm.tqdm(b):
+		for speech_feats, sentence in batch:
+			print(speech_feats)
+			print(sentence)
+			pass
+		break
+
 	# i, o, p = yn_data.prepareData()
 	# print(yn_data.tensorsFromPair(p[0], 'cuda')[0].size())
