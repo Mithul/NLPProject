@@ -130,7 +130,7 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600, buffer_factor=8, sort_len=True):
+	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=10, max_frames=600, buffer_factor=8, sort_len=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/train/feats/feat.tokenized.tsv")
 		batch_index = 0

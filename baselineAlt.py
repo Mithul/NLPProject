@@ -73,6 +73,7 @@ class Attention(nn.Module):
 		super(Attention,self).__init__()
 		self.ae = nn.Linear(e_hidden_dim,128)
 		self.ad = nn.Linear(d_hidden_dim,128)
+		self.softmax = nn.Softmax(dim=0)
 
 	def forward(self,enc_outputs,dec_output):
 		#decoder op = (batchxd_hidden_dim)
@@ -84,23 +85,26 @@ class Attention(nn.Module):
 		ad_ok = ad_ok.unsqueeze(2)
 		if DEBUG: print("ad-ok",ad_ok.size())
 
-		for i in range(enc_outputs.size(0)):
-			ae_hl = self.ae(enc_outputs[i,:,:])
-			ae_hl = ae_hl.unsqueeze(1)
-			#if DEBUG: print("ae-hl",ae_hl.size())
-			alphas.append(torch.bmm(ae_hl,ad_ok))
-		alphas = torch.stack(alphas)
-		alphas = alphas.squeeze(-1)
-		alphas = alphas.squeeze(-1)
-		if DEBUG: print("alphas: ",alphas.size())
-		alphas = nn.Softmax(alphas)
-		alphas = alphas.dim
+		# for i in range(enc_outputs.size(0)):
+		# 	ae_hl = self.ae(enc_outputs[i,:,:])
+		# 	ae_hl = ae_hl.unsqueeze(1)
+		# 	print("ae-hl", ad_ok.size(), ae_hl.size())
+		# 	alphas.append(torch.bmm(ae_hl,ad_ok))
+		ae_hl = self.ae(enc_outputs).unsqueeze(2)
+		# repeated_ad_ok = torch.cat([ad_ok.unsqueeze(0)]*ae_hl.size(0), dim=0)
+		if DEBUG : print("ae-hl", ad_ok.size(), ae_hl.size())
+		alphas = torch.matmul(ae_hl, ad_ok)
+		# alphas = torch.stack(alphas)
+		if DEBUG : print(alphas.size())
+		alphas = alphas.squeeze()
+		# print("alphas: ",alphas.size())
+		alphas = self.softmax(alphas)
+		# alphas = alphas.dim
 		alphas = alphas.permute(1,0)
 		alphas = alphas.unsqueeze(1)
 		if DEBUG: print("alphas: ",alphas.size())
 		enc_outputs = enc_outputs.permute(1,0,2)
 		if DEBUG: print("enc_outputs",enc_outputs.size())
-		context = torch.zeros(enc_outputs.size(2))
 		context = torch.bmm(alphas,enc_outputs)
 		context = context.squeeze(1)
 		if DEBUG: print ("context", context.size())
@@ -185,6 +189,7 @@ class Seq2Seq(nn.Module):
 		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
 
 		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
+		print(enc_outputs.size())
 		if DEBUG: print("hidden ",enc_hidden.size())
 		dec_init_hidden = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
 		dec_init_cell_state = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
@@ -196,7 +201,7 @@ class Seq2Seq(nn.Module):
 
 		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
 
-		teacher_forcing_ratio = 1.0
+		teacher_forcing_ratio = 0.8
 		outputs=torch.zeros(trg.size(1),trg.size(0), device=device)
 		input = trg[:,0]
 		if DEBUG: print("target size: ",trg.size())
@@ -213,20 +218,21 @@ class Seq2Seq(nn.Module):
 			teacher_force = random.random() < teacher_forcing_ratio
 
 			#get the highest predicted token from our predictions
-			top1 = output.argmax(1)
+			topv, top1 = output.topk(1)
+			top1 = top1.view(-1)
 			outputs[t] = top1
 			if DEBUG: print("top1",top1,"output",output.size())
 			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
 			#if teacher forcing, use actual next token as next input
 			#if not, use predicted token
-			input = trg[:,t] if teacher_force else top1
+			input = trg[:,t] if teacher_force else top1.detach()
 			if DEBUG: print("op/trg", output[1:,:].size(), trg[1:,:].size())
 
 			loss += self.loss(output[1:,:],trg[1:,t].long())
 			if DEBUG: print("LOSS", loss)
 
-		loss = loss/float(batch_size)
+		# loss = loss/float(batch_size)
 		print("LOSS", loss)
 
 		return outputs.permute(1, 0), loss
@@ -239,8 +245,17 @@ class Seq2Seq(nn.Module):
 	def count_parameters(self):
 		return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
+	def init_weights(self):
+	    def _init_weights(model):
+	        for name, param in model.named_parameters():
+	            if 'weight' in name:
+	                nn.init.normal_(param.data, mean=0, std=0.01)
+	            else:
+	                nn.init.constant_(param.data, 0)
+	    self.apply(_init_weights)
+
 def get_batch(iterator, lang):
-	for batch in tqdm.tqdm(iterator):
+	for batch in tqdm.tqdm(iterator, desc="iter"):
 		speech_batch = []
 		sentence_batch = []
 		for speech_feats, sentence in batch:
@@ -258,12 +273,13 @@ if __name__ == '__main__':
 	input_lang, output_lang, _ = mc_data.prepareData()
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
+	seq.init_weights()
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Baseline")
+	writer = SummaryWriter("Baseline_attempt2")
 
-	SAVE_PATH = "Baseline.model"
+	SAVE_PATH = "Baseline_attempt2.model"
 
 	iter = 0
 
@@ -271,6 +287,7 @@ if __name__ == '__main__':
 
 	loss_checkpoint = 20000
 	start_iter = None
+	start_epoch = None
 
 	if os.path.exists(SAVE_PATH):
 		checkpoint = torch.load(SAVE_PATH)
@@ -296,15 +313,21 @@ if __name__ == '__main__':
 
 		seq.load_state_dict(state_dict)
 		seq_optim.load_state_dict(optim_state_dict)
-		epoch = checkpoint['epoch']
+		start_epoch = checkpoint['epoch']
 		start_iter = checkpoint['iter']
 		loss = checkpoint['loss']
 		loss_checkpoint = checkpoint['loss']
 		iters_per_epoch = checkpoint['iters_per_epoch']
-		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
+		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
 	for epoch in range(1000):
+		if start_epoch is not None:
+			if start_epoch > epoch:
+				continue
+			if start_epoch == epoch:
+				start_epoch = None
+
 		iter = 0
 		b = mc_data.get_batch(batch_size=128)
 
@@ -354,7 +377,16 @@ if __name__ == '__main__':
 			loss.backward()
 			seq_optim.step()
 
-			iter += 1
+
+			if iter%10 == 0 or (loss_checkpoint > loss.item()):
+				for n, pr in seq.named_parameters():
+					 if pr.requires_grad:
+						 tag = "weights/"+n
+						 writer.add_histogram(tag+"/raw", pr, iters_per_epoch*epoch + iter)
+						 writer.add_scalar(tag+"/max", torch.max(pr).item(), iters_per_epoch*epoch + iter)
+						 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
+						 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
+						 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
 			if iter%50 == 0 or (loss_checkpoint > loss.item() and iter%10 == 0):
 				loss_checkpoint = loss.item()
@@ -377,5 +409,6 @@ if __name__ == '__main__':
 			# 		loss = checkpoint['loss']
 			# 		iters_per_epoch = checkpoint['iters_per_epoch']
 			# 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
+			iter += 1
 
 		iters_per_epoch = iter
