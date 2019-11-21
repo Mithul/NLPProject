@@ -190,7 +190,7 @@ class Seq2Seq(nn.Module):
 		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
 
 		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
-		print(enc_outputs.size())
+		# print(enc_outputs.size())
 		if DEBUG: print("hidden ",enc_hidden.size())
 		dec_init_hidden = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
 		dec_init_cell_state = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
@@ -265,7 +265,7 @@ class Seq2Seq(nn.Module):
 	    self.apply(_init_weights)
 
 def get_batch(iterator, lang):
-	for batch in tqdm.tqdm(iterator, desc="iter"):
+	for batch in iterator:
 		speech_batch = []
 		sentence_batch = []
 		for speech_feats, sentence in batch:
@@ -334,7 +334,7 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_data.get_batch(batch_size=32)
+	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
 	REPEAT_TIMES = 10
