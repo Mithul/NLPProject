@@ -23,8 +23,8 @@ class Encoder(nn.Module):
 		self.output_dim = output_dim
 		self.n_layers = n_layers
 		self.conv1 = nn.Conv2d(self.input_channels,32,3,2,1)
-		# self.bn = nn.BatchNorm2d(32)
-		# self.bn2 = nn.BatchNorm2d(32)
+		self.bn = nn.BatchNorm2d(32)
+		self.bn2 = nn.BatchNorm2d(32)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
 		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
@@ -37,11 +37,11 @@ class Encoder(nn.Module):
 		# input = input.float()
 		batch_size = input.size(0)
 		x = self.conv1(input)
-		# x = self.bn(x)
+		x = self.bn(x)
 		#x : [batch_size, channels(32), seq_len/2, feature_size]
 		if DEBUG: print("shape1",x.size())
 		x = self.conv2(x)
-		# x = self.bn2(x)
+		x = self.bn2(x)
 		#x : [batch_size, channels(32), seq_len/4, feature_size]
 		if DEBUG: print("shape2",x.size())
 		x = x.permute(2,0,1,3)
@@ -169,6 +169,7 @@ class Seq2Seq(nn.Module):
 		super(Seq2Seq, self).__init__()
 		self.n_layers = 4
 		self.hidden_dim = 256
+		self.target_dim = target_dim
 		self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
 		self.decoder = Decoder(target_dim, self.hidden_dim, self.hidden_dim*2, self.hidden_dim*2, self.n_layers, target_dim) # output_dim, dec_hidden_dim, enc_hidden_dim, attention_dim, n_layers
 		self.loss = nn.CrossEntropyLoss(ignore_index = PAD_token)
@@ -202,10 +203,11 @@ class Seq2Seq(nn.Module):
 		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
 
 		teacher_forcing_ratio = 0.8
-		outputs=torch.zeros(trg.size(1),trg.size(0), device=device)
+		outputs=torch.zeros(trg.size(1),trg.size(0), dtype=torch.long, device=device)
 		input = trg[:,0]
 		if DEBUG: print("target size: ",trg.size())
 		loss = 0
+		forced = []
 		for t in range(1, trg.size(1)):
 
 			#insert input token embedding, previous hidden state and all encoder hidden states
@@ -216,6 +218,7 @@ class Seq2Seq(nn.Module):
 			#place predictions in a tensor holding predictions for each token
 			#decide if we are going to use teacher forcing or not
 			teacher_force = random.random() < teacher_forcing_ratio
+			forced.append(teacher_force)
 
 			#get the highest predicted token from our predictions
 			topv, top1 = output.topk(1)
@@ -224,18 +227,25 @@ class Seq2Seq(nn.Module):
 			if DEBUG: print("top1",top1,"output",output.size())
 			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
+			loss += self.loss(output[:,:],trg[:,t].long())
+
 			#if teacher forcing, use actual next token as next input
 			#if not, use predicted token
 			input = trg[:,t] if teacher_force else top1.detach()
 			if DEBUG: print("op/trg", output[1:,:].size(), trg[1:,:].size())
 
-			loss += self.loss(output[1:,:],trg[1:,t].long())
-			if DEBUG: print("LOSS", loss)
+		trg = trg.permute(1,0)
+		# print("OP", outputs.size(), trg.size())
+		# print("OP", outputs, trg)
+		# print(outputs[1:,:].view(-1, 1),trg[1:,:].contiguous().view(-1))
+		# print(outputs[1:,:].view(-1, 1).size(),trg[1:,:].contiguous().view(-1).size())
+		# loss += self.loss(outputs[1:,:].view(-1, 1),trg[1:,:].contiguous().view(-1))
+		if DEBUG: print("LOSS", loss)
 
 		# loss = loss/float(batch_size)
-		print("LOSS", loss)
+		# print("LOSS", loss)
 
-		return outputs.permute(1, 0), loss
+		return outputs.permute(1, 0), loss, forced
 		# loss.backward()
 		# self.enc_optim.step()
 		# self.dec_optim.step()
@@ -271,10 +281,13 @@ def get_batch(iterator, lang):
 if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=True)
 	input_lang, output_lang, _ = mc_data.prepareData()
+
+	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=False)
+
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
-	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
+	seq_optim = optim.Adam(seq.parameters())#, lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.1, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
 	writer = SummaryWriter("Baseline_attempt2")
@@ -312,14 +325,19 @@ if __name__ == '__main__':
 				del optim_state_dict[key]
 
 		seq.load_state_dict(state_dict)
-		seq_optim.load_state_dict(optim_state_dict)
+		# seq_optim.load_state_dict(optim_state_dict)
 		start_epoch = checkpoint['epoch']
-		start_iter = checkpoint['iter']
+		# start_iter = checkpoint['iter']
 		loss = checkpoint['loss']
 		loss_checkpoint = checkpoint['loss']
 		iters_per_epoch = checkpoint['iters_per_epoch']
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
+
+	b_dev = mc_data.get_batch(batch_size=32)
+	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
+
+	REPEAT_TIMES = 200
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -329,86 +347,95 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=128)
+		b = mc_data.get_batch(batch_size=256)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
-			if start_iter is not None:
-				if start_iter > iter:
-					iter += 1
-					continue
-				if start_iter == iter:
-					start_iter = None
+			for repeat in range(REPEAT_TIMES):
+				print("ITER", iter)
+				if start_iter is not None:
+					if start_iter > iter:
+						iter += 1
+						continue
+					if start_iter == iter:
+						start_iter = None
 
-			seq_optim.zero_grad()
-			# if DEBUG: print(speech_feats)
-			# if DEBUG: print(sentence)
-			# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
-			# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
+				seq_optim.zero_grad()
+				# if DEBUG: print(speech_feats)
+				# if DEBUG: print(sentence)
+				# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
+				# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
 
-			if DEBUG: print("START")
-			f = speech_feats#torch.tensor(speech_feats, device=device)
-			# f = f.view(3,1,qwe,asd)
-			# qwe = f.size(0)
-			# asd = f.size(1)
-			# f = torch.cat((f,f,f))
-			# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
-			trg= sentence_feats
-			# tr=[]
-			# for t in trg:
-			# 	tmp = [0]*64
-			# 	tmp[ord(t)-ord('a')]= 1
-			# 	tr.append(tmp)
-			# trg = [tr[:],tr[:],tr[:]]
-			# trg = torch.FloatTensor(trg)
-			print("f",f.size())
-			print("trg",trg.size())
+				if DEBUG: print("START")
+				f = speech_feats#torch.tensor(speech_feats, device=device)
+				# f = f.view(3,1,qwe,asd)
+				# qwe = f.size(0)
+				# asd = f.size(1)
+				# f = torch.cat((f,f,f))
+				# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
+				trg= sentence_feats
+				# tr=[]
+				# for t in trg:
+				# 	tmp = [0]*64
+				# 	tmp[ord(t)-ord('a')]= 1
+				# 	tr.append(tmp)
+				# trg = [tr[:],tr[:],tr[:]]
+				# trg = torch.FloatTensor(trg)
+				print("f",f.size())
+				print("trg",trg.size())
 
-			if DEBUG: print("F", f.size())
+				if DEBUG: print("F", f.size())
 
-			outputs, loss = seq(f,trg)
-			writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
-			for output,trgt in zip(outputs,trg):
-				writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
-				writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-				print(output_lang.get_sentence(output))
-				print(output_lang.get_sentence(trgt))
-				break
+				outputs, loss, forced = seq(f,trg)
 
-			loss.backward()
-			seq_optim.step()
+				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats)
+
+				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
+				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
+				for output,trgt in zip(outputs[:4],trg[:4]):
+					writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+					writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+					print("O", output_lang.get_sentence(output))
+					print("T", output_lang.get_sentence(trgt))
+					# print(forced)
+					# break
+				print("LOSS", loss.item(), dev_loss.item())
+
+				loss.backward()
+				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
+				seq_optim.step()
 
 
-			if iter%10 == 0 or (loss_checkpoint > loss.item()):
-				for n, pr in seq.named_parameters():
-					 if pr.requires_grad:
-						 tag = "weights/"+n
-						 writer.add_histogram(tag+"/raw", pr, iters_per_epoch*epoch + iter)
-						 writer.add_scalar(tag+"/max", torch.max(pr).item(), iters_per_epoch*epoch + iter)
-						 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
-						 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
-						 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
+				if iter%10 == 0 or (loss_checkpoint > loss.item()):
+					for n, pr in seq.named_parameters():
+						 if pr.requires_grad:
+							 tag = "weights/"+n
+							 writer.add_histogram(tag+"/raw", pr, iters_per_epoch*epoch + iter)
+							 writer.add_scalar(tag+"/max", torch.max(pr).item(), iters_per_epoch*epoch + iter)
+							 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
+							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
+							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-			if iter%50 == 0 or (loss_checkpoint > loss.item() and iter%10 == 0):
-				loss_checkpoint = loss.item()
-				torch.save({
-		            'epoch': epoch,
-		            'iter': iter,
-					'iters_per_epoch': iters_per_epoch,
-		            'model_state_dict': seq.state_dict(),
-		            'optimizer_state_dict': seq_optim.state_dict(),
-		            'loss': loss,
-		            }, SAVE_PATH)
+				if iter%50 == 0 or (loss_checkpoint > loss.item() and iter%10 == 0):
+					loss_checkpoint = loss.item()
+					torch.save({
+			            'epoch': epoch,
+			            'iter': iter,
+						'iters_per_epoch': iters_per_epoch,
+			            'model_state_dict': seq.state_dict(),
+			            'optimizer_state_dict': seq_optim.state_dict(),
+			            'loss': loss,
+			            }, SAVE_PATH)
 
-			# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
-			# 	if os.path.exists(SAVE_PATH):
-			# 		checkpoint = torch.load(SAVE_PATH)
-			# 		seq.load_state_dict(checkpoint['model_state_dict'])
-			# 		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
-			# 		epoch = checkpoint['epoch']
-			# 		start_iter = checkpoint['iter']
-			# 		loss = checkpoint['loss']
-			# 		iters_per_epoch = checkpoint['iters_per_epoch']
-			# 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
-			iter += 1
+				# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
+				# 	if os.path.exists(SAVE_PATH):
+				# 		checkpoint = torch.load(SAVE_PATH)
+				# 		seq.load_state_dict(checkpoint['model_state_dict'])
+				# 		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+				# 		epoch = checkpoint['epoch']
+				# 		start_iter = checkpoint['iter']
+				# 		loss = checkpoint['loss']
+				# 		iters_per_epoch = checkpoint['iters_per_epoch']
+				# 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
+				iter += 1
 
 		iters_per_epoch = iter
