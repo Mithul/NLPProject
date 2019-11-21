@@ -20,7 +20,7 @@ DEBUG = True
 if __name__ == '__main__':
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
-	mc_data = Dataset('en', 'de', dataset_type="dev", character_level=True)
+	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = baselineAlt.Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
@@ -46,8 +46,8 @@ if __name__ == '__main__':
 		count = 0
 		total_score = 0
 		with torch.no_grad():
-			b = mc_data.get_batch(batch_size=2,buffer_factor=1)
-			for speech_feats, sentence_feats in baselineAlt.get_batch(b, output_lang):
+			b = mc_data.get_batch(batch_size=32,buffer_factor=1,  max_sent_len=20, max_frames=1600)
+			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
 				f = speech_feats
@@ -58,14 +58,16 @@ if __name__ == '__main__':
 				# if DEBUG: print("F", f.size())
 				seq.eval()
 				outputs, loss, _ = seq(f,trg, 0)
-				for output,trgt in tqdm.tqdm(zip(outputs,trg)):
+				for output,trgt in zip(outputs,trg):
 					out_sen = list(output_lang.get_sentence(output))
 					grnd_sen = [list(output_lang.get_sentence(trgt))]
-					score = sentence_bleu(grnd_sen,out_sen)
-					count = count + 1
-					total_score += score
+					# print(''.join(out_sen), ''.join(grnd_sen[0]))
+					if "applaus" not in set(''.join(out_sen).split(" ")):
+						score = sentence_bleu(grnd_sen,out_sen)
+						count = count + 1
+						total_score += score
 					# break
-				print(total_score/count)
+				# print(total_score/count)
 
 		bleu = total_score/count
 

@@ -96,7 +96,8 @@ class Attention(nn.Module):
 		alphas = torch.matmul(ae_hl, ad_ok)
 		# alphas = torch.stack(alphas)
 		if DEBUG : print(alphas.size())
-		alphas = alphas.squeeze()
+		alphas = alphas.squeeze(-1)
+		alphas = alphas.squeeze(-1)
 		# print("alphas: ",alphas.size())
 		alphas = self.softmax(alphas)
 		# alphas = alphas.dim
