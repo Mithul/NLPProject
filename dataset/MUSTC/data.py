@@ -136,7 +136,6 @@ class MUSTCData(object):
 	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")
-		batch_index = 0
 		batches = []
 		batch = []
 
@@ -146,10 +145,9 @@ class MUSTCData(object):
 			return (a[i:i+n] for i in range(0, len(a), n))
 
 		for i, line in enumerate(open(feats)):
-			if not batch_index < batch_size:
+			if len(batch) >= batch_size:
 				# yield batch
 				batches.append(batch)
-				batch_index = 0
 				batch = []
 				if len(batches) >= buffer_factor:
 					if not sort_len:
@@ -176,6 +174,7 @@ class MUSTCData(object):
 						# print(i, len(all_speech_feats))
 
 					batches = []
+				batch = []
 
 				# break
 
@@ -187,7 +186,9 @@ class MUSTCData(object):
 				speech_feats = np.load(featfile)
 				if len(speech_feats) < max_frames:
 					batch.append([speech_feats, l2_tokenized_s.strip().lower()])
-					batch_index += 1
+
+		if len(batch) > 0:
+			yield batch
 
 	def prepareData(self, data_directory="./data", reverse=False):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
