@@ -177,7 +177,7 @@ class Seq2Seq(nn.Module):
 		# self.dec_optim = optim.Adam(self.decoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 
 
-	def forward(self,src,trg):
+	def forward(self,src,trg, teacher_forcing_ratio = 0.8):
 		#src #batch x chn x n_frames x filters
 		#trg #batch x trg_len x embedding_dim
 
@@ -202,7 +202,7 @@ class Seq2Seq(nn.Module):
 
 		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
 
-		teacher_forcing_ratio = 0.8
+
 		outputs=torch.zeros(trg.size(1),trg.size(0), dtype=torch.long, device=device)
 		input = trg[:,0]
 		if DEBUG: print("target size: ",trg.size())
@@ -337,7 +337,7 @@ if __name__ == '__main__':
 	b_dev = mc_data.get_batch(batch_size=32)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 200
+	REPEAT_TIMES = 10
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -347,11 +347,15 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=256)
+		b = mc_data.get_batch(batch_size=64)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
 				print("ITER", iter)
+				shuffled_indeces = torch.randperm(speech_feats.size(0))
+
+				speech_feats = speech_feats[shuffled_indeces]
+				sentence_feats = sentence_feats[shuffled_indeces]
 				if start_iter is not None:
 					if start_iter > iter:
 						iter += 1
@@ -385,9 +389,9 @@ if __name__ == '__main__':
 
 				if DEBUG: print("F", f.size())
 
-				outputs, loss, forced = seq(f,trg)
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = 0.2)
 
-				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats)
+				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
 
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
