@@ -15,7 +15,7 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-DEBUG = True
+DEBUG = False
 
 if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', dataset_type="train", character_level=True)
@@ -25,10 +25,10 @@ if __name__ == '__main__':
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	SAVE_PATH = "Baseline_attempt3.model"
+	SAVE_PATH = "baseline.model"
 
 	if os.path.exists(SAVE_PATH):
-		checkpoint = torch.load(SAVE_PATH)
+		checkpoint = torch.load(SAVE_PATH,map_location=torch.device('cpu'))
 		state_dict = checkpoint['model_state_dict']
 		for key, val in seq.state_dict().items():
 			if key not in state_dict:
@@ -54,11 +54,14 @@ if __name__ == '__main__':
 
 				if DEBUG: print("F", f.size())
 				seq.eval()
-				outputs, loss = seq(f,trg)
+				outputs, loss,_ = seq(f,trg)
 				for output,trgt in zip(outputs,trg):
-					out_sen = list(output_lang.get_sentence(output))
-					grnd_sen = [list(output_lang.get_sentence(trgt))]
+					#out_sen = list(output_lang.get_sentence(output))
+					#grnd_sen = [list(output_lang.get_sentence(trgt))]
+					out_sen = [output_lang.get_sentence(output).split()]
+					grnd_sen = [output_lang.get_sentence(trgt).split()]
 					score = sentence_bleu(grnd_sen,out_sen)
+					print(score)
 					count = count + 1
 					total_score += score
 					break
