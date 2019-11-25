@@ -1,6 +1,6 @@
 import baselineAlt
 import numpy as np
-import random, tqdm, os
+import random, tqdm, os, sys
 
 from nltk.translate.bleu_score import sentence_bleu
 
@@ -18,6 +18,10 @@ from torch.utils.tensorboard import SummaryWriter
 DEBUG = False
 
 if __name__ == '__main__':
+	if len(sys.argv) < 2:
+		print("Usage : python evaluate.py model_path [char|word] [max_sentence_length(default:6)]")
+		exit()
+
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
@@ -26,7 +30,7 @@ if __name__ == '__main__':
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	SAVE_PATH = "baseline.model"
+	SAVE_PATH = sys.argv[1]
 
 	if os.path.exists(SAVE_PATH):
 		checkpoint = torch.load(SAVE_PATH,map_location=torch.device('cpu'))
@@ -43,10 +47,20 @@ if __name__ == '__main__':
 
 		seq.eval()
 
+		max_sent_len = 6
+		level = 'char'
+		if len(sys.argv) > 2:
+			level = sys.argv[2]
+		if len(sys.argv) > 3:
+			max_sent_len = int(sys.argv[3])
+
+		max_frames = max_sent_len * 160
+		print("Running test for",SAVE_PATH,"with max_sent_len as",max_sent_len,"and max_frames",max_frames,"at",level,"level")
+
 		count = 0
 		total_score = 0
 		with torch.no_grad():
-			b = mc_data.get_batch(batch_size=32,buffer_factor=1)
+			b = mc_data.get_batch(batch_size=32,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_frames)
 			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
@@ -59,15 +73,22 @@ if __name__ == '__main__':
 				seq.eval()
 				outputs, loss,_ = seq(f,trg)
 				for output,trgt in zip(outputs,trg):
-					#out_sen = list(output_lang.get_sentence(output))
-					#grnd_sen = [list(output_lang.get_sentence(trgt))]
-					out_sen = [output_lang.get_sentence(output).split()]
-					grnd_sen = [output_lang.get_sentence(trgt).split()]
-					# print(''.join(out_sen), ''.join(grnd_sen[0]))
-					if "applaus" not in set(''.join(out_sen).split(" ")):
+					if level=='char':
+						out_sen = list(output_lang.get_sentence(output))
+						grnd_sen = [list(output_lang.get_sentence(trgt))]
+					elif level=='word':
+						out_sen = output_lang.get_sentence(output).split()
+						grnd_sen = [output_lang.get_sentence(trgt).split()]
+					else:
+						print("Level must be 'word' or 'char'")
+						exit()
+					# print(' '.join(out_sen), ' '.join(grnd_sen[0]))
+					if "applaus" not in set(' '.join(grnd_sen[0]).split(" ") + ''.join(grnd_sen[0]).split(" ")) :
 						score = sentence_bleu(grnd_sen,out_sen)
 						count = count + 1
 						total_score += score
+					# else:
+						# print("REMOVED")
 					score = sentence_bleu(grnd_sen,out_sen)
 					count = count + 1
 					total_score += score

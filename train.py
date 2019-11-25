@@ -1,4 +1,4 @@
-from data.data import YesNoData as Dataset
+from data.data import MUSTCData as Dataset
 from model import Encoder, Decoder, Attention, Seq2Seq, WavEncoder
 from config import DEBUG, device
 
@@ -150,7 +150,7 @@ def batch_data(data, batch_size, device, pbar=None):
 if __name__ == '__main__':
     global PAD_IDX
 
-    tmt = Dataset('eng', 'fra')
+    tmt = Dataset('en', 'de')
     input_lang, output_lang, pairs = tmt.prepareData(reverse=True)
     INPUT_DIM = input_lang.n_words
     OUTPUT_DIM = output_lang.n_words

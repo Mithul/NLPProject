@@ -216,11 +216,11 @@ class Seq2Seq(nn.Module):
             teacher_force = random.random() < teacher_forcing_ratio
 
             #get the highest predicted token from our predictions
-            top1 = output.argmax(1)
+            top1, topi = output.topk(1)
 
             #if teacher forcing, use actual next token as next input
             #if not, use predicted token
-            input = trg[t] if teacher_force else top1
+            input = trg[t] if teacher_force else top1.detach()
 
         return outputs
 

@@ -31,9 +31,9 @@ def preprocess_fasttext_matrix():
 
 
 if __name__ == '__main__':
-    preprocess_tokenize("train")
-    data_dir = '/'.join(sys.argv[0].split("/")[:-1])
-    cmd = "cd "+ data_dir + " && bash get_top_words.sh"
-    print("Executing command ", cmd)
-    os.system(cmd)
-    preprocess_fasttext_matrix()
+    preprocess_tokenize("tst-COMMON")
+    # data_dir = '/'.join(sys.argv[0].split("/")[:-1])
+    # cmd = "cd "+ data_dir + " && bash get_top_words.sh"
+    # print("Executing command ", cmd)
+    # os.system(cmd)
+    # preprocess_fasttext_matrix()

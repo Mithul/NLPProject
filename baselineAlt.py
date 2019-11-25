@@ -338,7 +338,7 @@ if __name__ == '__main__':
 	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 10
+	REPEAT_TIMES = 50
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -348,7 +348,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=64)
+		b = mc_data.get_batch(batch_size=64, max_sent_len=8, max_frames=1000)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -390,7 +390,7 @@ if __name__ == '__main__':
 
 				if DEBUG: print("F", f.size())
 
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = 0.2)
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES-repeat)*1.0/REPEAT_TIMES)
 
 				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
 
