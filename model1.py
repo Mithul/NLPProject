@@ -27,10 +27,10 @@ class Encoder(nn.Module):
 		self.bn2 = nn.BatchNorm2d(32)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
-		self.LSTM = nn.LSTM(64*10,self.hidden_dim,self.n_layers,bidirectional=True)
+		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
 		self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True)
 		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
-		self.fc2 = nn.Linear(64*10,self.output_dim)
+		self.fc2 = nn.Linear(32*10,self.output_dim)
 		self.fc3 = nn.Linear(768,256)
 
 		self.softmax = nn.Softmax(dim=-1)
@@ -51,7 +51,7 @@ class Encoder(nn.Module):
 		if DEBUG: print("shape2",x.size())
 		x = x.permute(2,0,1,3)
 		#x : [seq_len/4, batch_size, channels(32), feature_size]
-		x = x.contiguous().view(int(x.size(0)/2),x.size(1),-1)
+		x = x.contiguous().view(int(x.size(0)),x.size(1),-1)
 		#x : [seq_len/4, batch_size, channels(32) x feature_size]
 		if DEBUG: print("shape3",x.size())
 
@@ -68,7 +68,7 @@ class Encoder(nn.Module):
 		sa_ip = self.fc2(x.permute(1,0,2))
 		sa_ip = sa_ip.permute(0,2,1)
 		if DEBUG:print("sa_ip: ",sa_ip.size())
-		energy = F.tanh(torch.bmm(h_op,sa_ip)) #b x ts1 x ts2
+		energy = torch.tanh(torch.bmm(h_op,sa_ip)) #b x ts1 x ts2
 		energy = energy.squeeze()
 		if DEBUG:print("energy:",energy.size())
 		attn_score = self.softmax(energy) # b x ts1
@@ -124,7 +124,7 @@ class Attention(nn.Module):
 		ae_hl = self.ae(enc_outputs).unsqueeze(2)
 		# repeated_ad_ok = torch.cat([ad_ok.unsqueeze(0)]*ae_hl.size(0), dim=0)
 		if DEBUG : print("ae-hl", ad_ok.size(), ae_hl.size())
-		alphas = F.tanh(torch.matmul(ae_hl, ad_ok))
+		alphas = torch.tanh(torch.matmul(ae_hl, ad_ok))
 		# alphas = torch.stack(alphas)
 		if DEBUG : print(alphas.size())
 		alphas = alphas.squeeze()
