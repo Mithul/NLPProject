@@ -125,7 +125,7 @@ class Attention(nn.Module):
 		ae_hl = self.ae(enc_outputs).unsqueeze(2)
 		# repeated_ad_ok = torch.cat([ad_ok.unsqueeze(0)]*ae_hl.size(0), dim=0)
 		if DEBUG : print("ae-hl", ad_ok.size(), ae_hl.size())
-		alphas = torch.tanh(torch.matmul(ae_hl, ad_ok))
+		alphas = torch.matmul(ae_hl, ad_ok)
 		# alphas = torch.stack(alphas)
 		if DEBUG : print(alphas.size())
 		alphas = alphas.squeeze()
@@ -319,7 +319,7 @@ if __name__ == '__main__':
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
-	seq_optim = optim.Adam(seq.parameters())#, lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.1, amsgrad=False)
+	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
 	writer = SummaryWriter("Baseline_attempt4")
@@ -335,7 +335,7 @@ if __name__ == '__main__':
 	start_epoch = None
 
 	if os.path.exists(SAVE_PATH):
-		checkpoint = torch.load(SAVE_PATH,map_location=torch.device('cpu'))
+		checkpoint = torch.load(SAVE_PATH,map_location=torch.device(device))
 		state_dict = checkpoint['model_state_dict']
 		for key, val in seq.state_dict().items():
 			if key not in state_dict:
@@ -379,7 +379,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=100)
+		b = mc_data.get_batch(batch_size=64)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -421,9 +421,17 @@ if __name__ == '__main__':
 
 				if DEBUG: print("F", f.size())
 
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = 0.2)
+				seq.train()
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
 
+
+				loss.backward()
+				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
+				seq_optim.step()
+
+				seq.eval()
 				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
+				print("LOSS", loss.item(), dev_loss.item())
 
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
@@ -434,12 +442,6 @@ if __name__ == '__main__':
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
-				print("LOSS", loss.item(), dev_loss.item())
-
-				loss.backward()
-				#torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
-				seq_optim.step()
-
 
 				if iter%10 == 0 or (loss_checkpoint > loss.item()):
 					for n, pr in seq.named_parameters():
@@ -461,14 +463,14 @@ if __name__ == '__main__':
 			            'optimizer_state_dict': seq_optim.state_dict(),
 			            'loss': loss,
 			            }, SAVE_PATH)
-					checkpoint = torch.load(SAVE_PATH)
-					seq.load_state_dict(checkpoint['model_state_dict'])
-					seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
-					epoch = checkpoint['epoch']
-					start_iter = checkpoint['iter']
-					loss = checkpoint['loss']
-					iters_per_epoch = checkpoint['iters_per_epoch']
-					print("Loaded", epoch, start_iter, loss, iters_per_epoch)
+					# checkpoint = torch.load(SAVE_PATH)
+					# seq.load_state_dict(checkpoint['model_state_dict'])
+					# seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+					# epoch = checkpoint['epoch']
+					# start_iter = checkpoint['iter']
+					# loss = checkpoint['loss']
+					# iters_per_epoch = checkpoint['iters_per_epoch']
+					# print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
 				# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
 				# 	if os.path.exists(SAVE_PATH):

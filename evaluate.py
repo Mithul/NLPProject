@@ -59,9 +59,9 @@ if __name__ == '__main__':
 				seq.eval()
 				outputs, loss,_ = seq(f,trg)
 				for output,trgt in zip(outputs,trg):
-					#out_sen = list(output_lang.get_sentence(output))
-					#grnd_sen = [list(output_lang.get_sentence(trgt))]
-					out_sen = [output_lang.get_sentence(output).split()]
+					# out_sen = list(output_lang.get_sentence(output))
+					# grnd_sen = [list(output_lang.get_sentence(trgt))]
+					out_sen = output_lang.get_sentence(output).split()
 					grnd_sen = [output_lang.get_sentence(trgt).split()]
 					# print(''.join(out_sen), ''.join(grnd_sen[0]))
 					if "applaus" not in set(''.join(out_sen).split(" ")):
