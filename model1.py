@@ -124,7 +124,7 @@ class Attention(nn.Module):
 		ae_hl = self.ae(enc_outputs).unsqueeze(2)
 		# repeated_ad_ok = torch.cat([ad_ok.unsqueeze(0)]*ae_hl.size(0), dim=0)
 		if DEBUG : print("ae-hl", ad_ok.size(), ae_hl.size())
-		alphas = torch.tanh(torch.matmul(ae_hl, ad_ok))
+		alphas = torch.matmul(ae_hl, ad_ok)
 		# alphas = torch.stack(alphas)
 		if DEBUG : print(alphas.size())
 		alphas = alphas.squeeze()
@@ -318,7 +318,7 @@ if __name__ == '__main__':
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
-	seq_optim = optim.Adam(seq.parameters())#, lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.1, amsgrad=False)
+	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
 	writer = SummaryWriter("Baseline_attempt4")
@@ -365,7 +365,7 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
+	b_dev = mc_dev_data.get_batch(batch_size=128, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
 	REPEAT_TIMES = 10
@@ -378,7 +378,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=64)
+		b = mc_data.get_batch(batch_size=128)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -436,7 +436,7 @@ if __name__ == '__main__':
 				print("LOSS", loss.item(), dev_loss.item())
 
 				loss.backward()
-				#torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
+				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
 				seq_optim.step()
 
 
