@@ -27,8 +27,8 @@ class Encoder(nn.Module):
 		self.bn2 = nn.BatchNorm2d(32)
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
-		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True)
-		self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True)
+		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
+		self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
 		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
 		self.fc2 = nn.Linear(32*10,self.output_dim)
 		self.fc3 = nn.Linear(768,256)
@@ -150,8 +150,8 @@ class Decoder(nn.Module):
 		self.dec_hidden_dim = dec_hidden_dim
 		self.attention_dim = attention_dim
 		self.n_layers = n_layers
-		self.first_LSTM = nn.LSTM(self.embed_dim+self.attention_dim,self.dec_hidden_dim,1,bidirectional=False)
-		self.LSTM = nn.LSTM(self.dec_hidden_dim+self.attention_dim,self.dec_hidden_dim,self.n_layers-1,bidirectional=False)
+		self.first_LSTM = nn.LSTM(self.embed_dim+self.attention_dim,self.dec_hidden_dim,1,bidirectional=False,dropout=0.3)
+		self.LSTM = nn.LSTM(self.dec_hidden_dim+self.attention_dim,self.dec_hidden_dim,self.n_layers-1,bidirectional=False,dropout=0.3)
 		self.hidden = None
 		self.cell_state = None
 		self.attn = Attention(enc_hidden_dim,dec_hidden_dim)
@@ -323,7 +323,7 @@ if __name__ == '__main__':
 
 	writer = SummaryWriter("Baseline_attempt4")
 
-	SAVE_PATH = "Baseline_attempt4.model"
+	SAVE_PATH = "baseline.model"
 
 	iter = 0
 
@@ -334,7 +334,7 @@ if __name__ == '__main__':
 	start_epoch = None
 
 	if os.path.exists(SAVE_PATH):
-		checkpoint = torch.load(SAVE_PATH)
+		checkpoint = torch.load(SAVE_PATH,map_location=torch.device('cpu'))
 		state_dict = checkpoint['model_state_dict']
 		for key, val in seq.state_dict().items():
 			if key not in state_dict:
@@ -436,7 +436,7 @@ if __name__ == '__main__':
 				print("LOSS", loss.item(), dev_loss.item())
 
 				loss.backward()
-				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
+				#torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
 				seq_optim.step()
 
 
@@ -450,8 +450,8 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0 or (loss_checkpoint > loss.item() and iter%10 == 0):
-					loss_checkpoint = loss.item()
+				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
+					loss_checkpoint = dev_loss.item()
 					torch.save({
 			            'epoch': epoch,
 			            'iter': iter,
@@ -460,6 +460,14 @@ if __name__ == '__main__':
 			            'optimizer_state_dict': seq_optim.state_dict(),
 			            'loss': loss,
 			            }, SAVE_PATH)
+					checkpoint = torch.load(SAVE_PATH)
+					seq.load_state_dict(checkpoint['model_state_dict'])
+					seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+					epoch = checkpoint['epoch']
+					start_iter = checkpoint['iter']
+					loss = checkpoint['loss']
+					iters_per_epoch = checkpoint['iters_per_epoch']
+					print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
 				# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
 				# 	if os.path.exists(SAVE_PATH):
