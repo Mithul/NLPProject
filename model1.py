@@ -86,10 +86,11 @@ class Encoder(nn.Module):
 
 
 		outputs,(h,c) = self.LSTM_2(lstm_ip,(h,c))
-		newOutput = []
-		for out in outputs:
-			newOutput.append(F.relu(self.fc1(out)))
-		out = torch.stack(newOutput)
+		# newOutput = []
+		# for out in outputs:
+		# 	newOutput.append(F.relu(self.fc1(out)))
+		# out = torch.stack(newOutput)
+		out = F.relu(self.fc1(outputs))
 		if DEBUG: print("shapeOut2",out.size())
 		return out,h,c
 		'''
@@ -368,7 +369,7 @@ if __name__ == '__main__':
 	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 10
+	REPEAT_TIMES = 5
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -378,7 +379,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=64)
+		b = mc_data.get_batch(batch_size=100)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
