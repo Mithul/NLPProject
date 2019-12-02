@@ -11,12 +11,16 @@ EOS_token = 1
 PAD_token = 2
 SPACE_token = 3
 UNK_token = 4
-
-def extract_fbank(wavfile):
-	fs, raw = wav.read(wavfile)
-	fbank = feats.logfbank(raw,samplerate=fs,nfilt=40)
-
-	return fbank
+#
+# def extract_fbank(wavfile):
+# 	fs, raw = wav.read(wavfile)
+# 	fbank = feats.logfbank(raw,samplerate=fs,nfilt=40)
+# 	delta = feats.delta(fbank,15)
+# 	delta_delta = feats.delta(delta,15)
+#
+# 	features = torch.stack((fbank,delta,delta_delta))
+#
+# 	return features
 
 class CharLang:
 	def __init__(self, name):
@@ -108,26 +112,43 @@ class Lang:
 		return ' '.join(words)
 
 class WavData(object):
-	def __init__(self, name):
+	def __init__(self, name, delta=False, delta_delta=False):
 		self.name = name
 		self.n_words = 40
+		self.delta = delta
+		self.delta_delta = delta_delta
+		if delta:
+			self.n_words = 80
+			if delta_delta:
+				self.n_words = 120
 
 	def addFeats(self, feats):
 		return feats
 
-	def tensorFromSentence(self, feats, device):
-		return torch.tensor(feats, dtype=torch.float, device=device)
+	def get_feats(self, feat):
+		if self.delta:
+			delta = feats.delta(feat,15)
+			if self.delta_delta:
+				delta_delta = feats.delta(delta,15)
+				feat = [feat, delta, delta_delta]
+			else:
+				feat = [feat, delta]
+
+		return np.asarray(feat)
+
+	def tensorFromSentence(self, feat, device):
+		return torch.tensor(feat, dtype=torch.float, device=device)
 
 	def get_sentence(self, data):
 		return "WAV_DATA"
 
 class MUSTCData(object):
-	def __init__(self, l1, l2, dataset_type = "train", character_level=False):
+	def __init__(self, l1, l2, dataset_type = "train", character_level=False, delta=False, delta_delta=False):
 		self.l1 = l1
 		self.l2 = l2
 		self.dataset_type = dataset_type
 		self.character_level = character_level
-		self.input_lang = WavData(l1)
+		self.input_lang = WavData(l1, delta, delta_delta)
 		if self.character_level:
 			self.output_lang = CharLang(l2)
 		else:
@@ -183,7 +204,7 @@ class MUSTCData(object):
 				if ":" in set(l2_tokenized_s.strip().lower().split(" ")):
 					continue
 				featfile = os.path.join(data_directory, featfile)
-				speech_feats = np.load(featfile)
+				speech_feats = input_lang.get_feats(np.load(featfile))
 				if len(speech_feats) < max_frames:
 					batch.append([speech_feats, l2_tokenized_s.strip().lower()])
 
@@ -206,7 +227,7 @@ class MUSTCData(object):
 
 
 if __name__ == '__main__':
-	mc_data = MUSTCData('en', 'de', character_level=False)
+	mc_data = MUSTCData('en', 'de', character_level=False, delta=True, delta_delta=True)
 	input_lang, output_lang, _ = mc_data.prepareData(data_directory="./")
 	b = mc_data.get_batch(data_directory="./", batch_size=2)
 	for batch in tqdm.tqdm(b):
@@ -221,11 +242,11 @@ if __name__ == '__main__':
 			pass
 		break
 
-	mc_dev_data = MUSTCData('en', 'de', dataset_type="dev", character_level=False)
+	mc_dev_data = MUSTCData('en', 'de', dataset_type="dev", character_level=False, delta=True, delta_delta=True)
 	b_dev = mc_data.get_batch(data_directory="./", batch_size=2)
 	for batch in tqdm.tqdm(b):
 		for speech_feats, sentence in batch:
-			print(speech_feats)
+			print(speech_feats, speech_feats.shape)
 			print(sentence)
 			pass
 		break
