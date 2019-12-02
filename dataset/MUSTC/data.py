@@ -204,7 +204,7 @@ class MUSTCData(object):
 				if ":" in set(l2_tokenized_s.strip().lower().split(" ")):
 					continue
 				featfile = os.path.join(data_directory, featfile)
-				speech_feats = input_lang.get_feats(np.load(featfile))
+				speech_feats = self.input_lang.get_feats(np.load(featfile))
 				if len(speech_feats) < max_frames:
 					batch.append([speech_feats, l2_tokenized_s.strip().lower()])
 

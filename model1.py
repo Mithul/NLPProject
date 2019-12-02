@@ -316,7 +316,7 @@ if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=True)
 	input_lang, output_lang, _ = mc_data.prepareData()
 
-	mc_dev_data = Dataset('en', 'de', dataset_type="train", character_level=False)
+	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=True)
 
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
