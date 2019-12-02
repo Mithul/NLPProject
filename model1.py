@@ -16,6 +16,38 @@ from evaluate import get_bleu_score
 
 DEBUG = False
 
+class Pyramidal(nn.Module):
+	def __init__(self,input_dim,hidden_dim,n_layers):
+		super(Pyramidal,self).__init__()
+		self.input_dim = input_dim
+		self.hidden_dim = hidden_dim
+		self.n_layers = n_layers
+		self.LSTM = []
+		self.LSTM.append(nn.LSTM(self.input_dim,self.hidden_dim,1,bidirectional=True,dropout=0.3))
+		for i in range(1,n_layers):
+			self.LSTM.append(nn.LSTM(self.hidden_dim*4,self.hidden_dim,1,bidirectional=True,dropout=0.3))
+
+	def forward(self,input,h,c):
+		# input t x b x input_dim
+		print(input.size(),h.size())
+		out,(h,c) = self.LSTM[0](input,(h,c))
+		print("out:",out.size())
+		for i in range(1,self.n_layers):
+			#t x b x hidden_dim 
+			timestep = out.size(0)
+			batch_size = out.size(1)
+			dim = out.size(2)
+	        # Reduce time resolution
+			if timestep%2 ==1 :
+				out = torch.cat((out,torch.zeros(1,batch_size,dim)))
+				timestep +=1
+			out = out.contiguous().view(int(timestep/2),batch_size,dim*2)
+			out,(h,c) = self.LSTM[i](out,(h,c))
+
+		return out , (h,c)
+
+
+
 class Encoder(nn.Module):
 	def __init__(self,input_dim,input_channels,hidden_dim,output_dim,n_layers):
 		super(Encoder,self).__init__()
@@ -30,7 +62,7 @@ class Encoder(nn.Module):
 		self.conv2 = nn.Conv2d(32,32,3,2,1)
 		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
 		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
-		self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
+		#self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
 		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
 		self.fc2 = nn.Linear(32*10,self.output_dim)
 		self.fc3 = nn.Linear(768,256)
@@ -57,13 +89,15 @@ class Encoder(nn.Module):
 		#x : [seq_len/4, batch_size, channels(32) x feature_size]
 		if DEBUG: print("shape3",x.size())
 
-		outputs,(h,c) =  self.LSTM(x,(h,c))
+		pyramid = Pyramidal(32*10,self.hidden_dim,self.n_layers)
+		outputs,(h,c) = pyramid(x,h,c)
+
 		#if DEBUG: print('sum',torch.sum(outputs[-1]-torch.cat((h[-2, :, :],h[-1, :, :]))))
 		if DEBUG: print("shapeOut",outputs.size())
 		if DEBUG: print("shapeH",h.size())
 		if DEBUG: print("shapeC",c.size())
 
-		h_op = outputs[-1] #ts x batch x 512
+		'''h_op = outputs[-1] #ts x batch x 512
 		if DEBUG:print("h_op size: ",h_op.size())
 		h_op = h_op.unsqueeze(1)
 		if DEBUG:print("h_op size: ",h_op.size())
@@ -96,10 +130,11 @@ class Encoder(nn.Module):
 		if DEBUG: print("shapeOut2",out.size())
 		return out,h,c
 		'''
-		out = F.relu((self.fc1(h[-2, :, :] + h[-1, :, :])))
-		if DEBUG: print("shapeOut2",out.size())'''
+		#out = F.relu((self.fc1(h[-2, :, :] + h[-1, :, :])))
+		out = F.relu((self.fc1(outputs)))
+		if DEBUG: print("shapeOut2",out.size())
+		return out,h,c
 		#batch normalization]
-
 
 
 class Attention(nn.Module):
@@ -220,8 +255,8 @@ class Seq2Seq(nn.Module):
 
 		batch_size = src.size(0)
 
-		h = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
-		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
+		h = torch.zeros(2, batch_size, self.hidden_dim, device=device)
+		c = torch.zeros(2, batch_size, self.hidden_dim, device=device)
 
 		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
 		# print(enc_outputs.size())
@@ -262,7 +297,7 @@ class Seq2Seq(nn.Module):
 			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
 			loss += self.loss(output[:,:],trg[:,t].long())
-
+			
 			#if teacher forcing, use actual next token as next input
 			#if not, use predicted token
 			input = trg[:,t] if teacher_force else top1.detach()
