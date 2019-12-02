@@ -2,7 +2,9 @@ import baselineAlt
 import numpy as np
 import random, tqdm, os
 
+from nltk.translate import bleu
 from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import SmoothingFunction
 
 import torch
 import torch.nn.functional as F
@@ -45,6 +47,8 @@ if __name__ == '__main__':
 
 		count = 0
 		total_score = 0
+		smooth = SmoothingFunction().method4
+
 		with torch.no_grad():
 			b = mc_data.get_batch(batch_size=32,buffer_factor=1)
 			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
@@ -59,16 +63,17 @@ if __name__ == '__main__':
 				seq.eval()
 				outputs, loss,_ = seq(f,trg)
 				for output,trgt in zip(outputs,trg):
-					# out_sen = list(output_lang.get_sentence(output))
-					# grnd_sen = [list(output_lang.get_sentence(trgt))]
+					out_sen1 = list(output_lang.get_sentence(output))
+					grnd_sen1 = [list(output_lang.get_sentence(trgt))]
 					out_sen = output_lang.get_sentence(output).split()
 					grnd_sen = [output_lang.get_sentence(trgt).split()]
 					# print(''.join(out_sen), ''.join(grnd_sen[0]))
 					if "applaus" not in set(''.join(out_sen).split(" ")):
-						score = sentence_bleu(grnd_sen,out_sen)
+						score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
 						count = count + 1
 						total_score += score
-					score = sentence_bleu(grnd_sen,out_sen)
+					score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
+					score1 = sentence_bleu(grnd_sen1,out_sen1)
 					count = count + 1
 					total_score += score
 					# break
