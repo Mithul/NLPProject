@@ -2,6 +2,7 @@ import os, tqdm
 import numpy as np
 import python_speech_features as feats
 import scipy.io.wavfile as wav
+import torch
 
 from collections import defaultdict
 
@@ -15,8 +16,12 @@ UNK_token = 4
 def extract_fbank(wavfile):
 	fs, raw = wav.read(wavfile)
 	fbank = feats.logfbank(raw,samplerate=fs,nfilt=40)
+	delta = feats.delta(fbank,15)
+	delta_delta = feats.delta(delta,15)
 
-	return fbank
+	features = torch.stack((fbank,delta,delta_delta))
+
+	return features
 
 class CharLang:
 	def __init__(self, name):
