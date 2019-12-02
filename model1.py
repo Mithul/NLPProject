@@ -12,6 +12,8 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
+from evaluate import get_bleu_score
+
 DEBUG = False
 
 class Encoder(nn.Module):
@@ -319,7 +321,7 @@ if __name__ == '__main__':
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
-	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.001, amsgrad=False)
+	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
 	writer = SummaryWriter("Baseline_attempt4")
@@ -357,7 +359,7 @@ if __name__ == '__main__':
 				del optim_state_dict[key]
 
 		seq.load_state_dict(state_dict)
-		# seq_optim.load_state_dict(optim_state_dict)
+		seq_optim.load_state_dict(optim_state_dict)
 		start_epoch = checkpoint['epoch']
 		# start_iter = checkpoint['iter']
 		loss = checkpoint['loss']
@@ -379,7 +381,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=64)
+		b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -452,6 +454,10 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
+
+				if iter%50 == 0:
+					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0])
+					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0])
 
 				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
 					loss_checkpoint = dev_loss.item()

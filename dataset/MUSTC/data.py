@@ -133,7 +133,7 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False):
+	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False, min_sent_len=1):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")
 		batches = []
@@ -179,7 +179,7 @@ class MUSTCData(object):
 				# break
 
 			l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
-			if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len:
+			if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len and len(l2_tokenized_s.strip().lower().split(" ")) > min_sent_len:
 				if ":" in set(l2_tokenized_s.strip().lower().split(" ")):
 					continue
 				featfile = os.path.join(data_directory, featfile)

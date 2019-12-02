@@ -1,6 +1,6 @@
 import baselineAlt
 import numpy as np
-import random, tqdm, os
+import random, tqdm, os, sys
 
 from nltk.translate.bleu_score import sentence_bleu
 
@@ -17,7 +17,33 @@ from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = False
 
+def get_bleu_score(outputs, trg, output_lang, bleu_level='char'):
+	count = 0
+	total_score = 0
+	for output,trgt in zip(outputs,trg):
+		if bleu_level == 'char':
+			out_sen = list(output_lang.get_sentence(output))
+			grnd_sen = [list(output_lang.get_sentence(trgt))]
+		elif bleu_level == 'word':
+			out_sen = output_lang.get_sentence(output).split()
+			grnd_sen = [output_lang.get_sentence(trgt).split()]
+		# print(''.join(out_sen), ''.join(grnd_sen[0]))
+		if "applaus" not in set(''.join(out_sen).split(" ")):
+			score = sentence_bleu(grnd_sen,out_sen)
+			count = count + 1
+			total_score += score
+		score = sentence_bleu(grnd_sen,out_sen)
+		count = count + 1
+		total_score += score
+
+	return total_score, count
+
+
 if __name__ == '__main__':
+	if len(sys.argv) < 2:
+		print("Usage : python evaluate.py <model_path> [<word|char> [<max_sent_len>]]")
+		exit(1)
+
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
@@ -26,7 +52,7 @@ if __name__ == '__main__':
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	SAVE_PATH = "baseline.model"
+	SAVE_PATH = sys.argv[1]
 
 	if os.path.exists(SAVE_PATH):
 		checkpoint = torch.load(SAVE_PATH,map_location=torch.device('cpu'))
@@ -45,8 +71,17 @@ if __name__ == '__main__':
 
 		count = 0
 		total_score = 0
+
+		max_sent_len = 6
+		bleu_level = 'char'
+		if len(sys.argv) > 1:
+			bleu_level = sys.argv[2]
+			if len(sys.argv) > 2:
+				max_sent_len = int(sys.argv[3])
+
+
 		with torch.no_grad():
-			b = mc_data.get_batch(batch_size=32,buffer_factor=1)
+			b = mc_data.get_batch(batch_size=32,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_sent_len*150)
 			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
@@ -58,22 +93,12 @@ if __name__ == '__main__':
 				# if DEBUG: print("F", f.size())
 				seq.eval()
 				outputs, loss,_ = seq(f,trg)
-				for output,trgt in zip(outputs,trg):
-					# out_sen = list(output_lang.get_sentence(output))
-					# grnd_sen = [list(output_lang.get_sentence(trgt))]
-					out_sen = output_lang.get_sentence(output).split()
-					grnd_sen = [output_lang.get_sentence(trgt).split()]
-					# print(''.join(out_sen), ''.join(grnd_sen[0]))
-					if "applaus" not in set(''.join(out_sen).split(" ")):
-						score = sentence_bleu(grnd_sen,out_sen)
-						count = count + 1
-						total_score += score
-					score = sentence_bleu(grnd_sen,out_sen)
-					count = count + 1
-					total_score += score
+				score, b_count = get_bleu_score(outputs, trg, output_lang, bleu_level)
+				total_score += score
+				count += b_count
 					# break
 				# print(total_score/count)
 
 		bleu = total_score/count
 
-		print("BLEU score: ",bleu)
+		print("BLEU", bleu_level, "score: ",bleu, "max_sent_len", max_sent_len)
