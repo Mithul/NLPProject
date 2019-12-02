@@ -324,9 +324,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Baseline_attempt4")
+	writer = SummaryWriter("Self_attention")
 
-	SAVE_PATH = "baseline.model"
+	SAVE_PATH = "Self_attention.model"
 
 	iter = 0
 
@@ -456,8 +456,8 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
 				if iter%50 == 0:
-					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0])
-					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0])
+					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
+					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
 				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
 					loss_checkpoint = dev_loss.item()
