@@ -447,7 +447,7 @@ if __name__ == '__main__':
 				del optim_state_dict[key]
 
 		seq.load_state_dict(state_dict)
-		seq_optim.load_state_dict(optim_state_dict)
+		# seq_optim.load_state_dict(optim_state_dict)
 		start_epoch = checkpoint['epoch']
 		# start_iter = checkpoint['iter']
 		loss = checkpoint['loss']

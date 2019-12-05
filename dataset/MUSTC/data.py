@@ -108,6 +108,8 @@ class Lang:
 		words = []
 		for index in indeces:
 			words.append(self.index2word[index.item()])
+			if index == PAD_token or index == EOS_token:
+				break
 
 		return ' '.join(words)
 
