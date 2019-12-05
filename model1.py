@@ -371,7 +371,7 @@ if __name__ == '__main__':
 	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 5
+	REPEAT_TIMES = 1
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -381,15 +381,15 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
+		b = mc_data.get_batch(batch_size=16, buffer_factor=32, max_sent_len=10, min_sent_len=3, max_frames=1000)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
 				print("ITER", iter)
-				shuffled_indeces = torch.randperm(speech_feats.size(0))
+				# shuffled_indeces = torch.randperm(speech_feats.size(0))
+				# speech_feats = speech_feats[shuffled_indeces]
+				# sentence_feats = sentence_feats[shuffled_indeces]
 
-				speech_feats = speech_feats[shuffled_indeces]
-				sentence_feats = sentence_feats[shuffled_indeces]
 				if start_iter is not None:
 					if start_iter > iter:
 						iter += 1
@@ -398,33 +398,18 @@ if __name__ == '__main__':
 						start_iter = None
 
 				seq_optim.zero_grad()
-				# if DEBUG: print(speech_feats)
-				# if DEBUG: print(sentence)
-				# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
-				# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
-
 				if DEBUG: print("START")
-				f = speech_feats#torch.tensor(speech_feats, device=device)
-				# f = f.view(3,1,qwe,asd)
-				# qwe = f.size(0)
-				# asd = f.size(1)
-				# f = torch.cat((f,f,f))
-				# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
+				f = speech_feats
 				trg= sentence_feats
-				# tr=[]
-				# for t in trg:
-				# 	tmp = [0]*64
-				# 	tmp[ord(t)-ord('a')]= 1
-				# 	tr.append(tmp)
-				# trg = [tr[:],tr[:],tr[:]]
-				# trg = torch.FloatTensor(trg)
 				print("f",f.size())
 				print("trg",trg.size())
 
 				if DEBUG: print("F", f.size())
 
 				seq.train()
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
+
+				tf_ratio = 0#(REPEAT_TIMES - repeat - 1)/REPEAT_TIMES
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = tf_ratio)
 
 
 				loss.backward()
@@ -433,19 +418,20 @@ if __name__ == '__main__':
 
 				seq.eval()
 				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
-				print("LOSS", loss.item(), dev_loss.item())
+				print("LOSS", loss.item(), dev_loss.item(), tf_ratio)
 
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
 				for output,trgt in zip(outputs[:4],trg[:4]):
-					writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
-					writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+					if iter%100 == 0:
+						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
 					print("O", output_lang.get_sentence(output))
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
 
-				if iter%10 == 0 or (loss_checkpoint > loss.item()):
+				if iter%200 == 0 or (loss_checkpoint > loss.item()):
 					for n, pr in seq.named_parameters():
 						 if pr.requires_grad:
 							 tag = "weights/"+n
@@ -459,7 +445,7 @@ if __name__ == '__main__':
 					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
 					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
+				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%20 == 0):
 					loss_checkpoint = dev_loss.item()
 					torch.save({
 			            'epoch': epoch,
