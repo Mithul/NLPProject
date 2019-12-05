@@ -18,12 +18,12 @@ def preprocess_tokenize(dataset_type):
 
 def preprocess_fasttext_matrix():
     model = fasttext.load_model("data/en-de/cc.de.300.bin")
-    word_count_file = "data/en-de/de.sorted.word_count"
+    word_count_file = "data/en-de/de.words"
     feats = []
     with open(word_count_file) as fi:
         for line in tqdm.tqdm(fi):
-            count, word = line.strip().split("\t")
-            count = int(count.strip())
+            word = line.strip()
+            # count = int(count.strip())
             word = word.strip().lower()
             feats.append(model[word])
 
@@ -31,9 +31,9 @@ def preprocess_fasttext_matrix():
 
 
 if __name__ == '__main__':
-    preprocess_tokenize("train")
-    data_dir = '/'.join(sys.argv[0].split("/")[:-1])
-    cmd = "cd "+ data_dir + " && bash get_top_words.sh"
-    print("Executing command ", cmd)
-    os.system(cmd)
+    # preprocess_tokenize("train")
+    # data_dir = '/'.join(sys.argv[0].split("/")[:-1])
+    # cmd = "cd "+ data_dir + " && bash get_top_words.sh"
+    # print("Executing command ", cmd)
+    # os.system(cmd)
     preprocess_fasttext_matrix()

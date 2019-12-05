@@ -156,6 +156,16 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
+	def get_word_embeddings(self, data_directory="./data"):
+		if self.character_level == True:
+			return None # needs word level dataset to be initialized
+		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
+		fasttext_file = os.path.join(data_directory, self.l2 + ".fasttext.npy")
+		embedding = np.load(fasttext_file)
+		embedding = embedding[:self.output_lang.n_words]
+		print(embedding.shape)
+
+
 	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False, min_sent_len=1):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		feats = os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")
@@ -217,7 +227,9 @@ class MUSTCData(object):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		words_file = os.path.join(data_directory, self.l2 + ".words")
 		with open(words_file) as f:
-			for line in f:
+			for i, line in enumerate(f):
+				if i < 4:
+					continue # First four words are EOS, SOS, SPACE, UNK
 				word = line.strip()
 				self.output_lang.addWord(word)
 		return self.input_lang, self.output_lang, None
@@ -232,6 +244,7 @@ if __name__ == '__main__':
 	mc_data = MUSTCData('en', 'de', character_level=False, delta=True, delta_delta=True)
 	input_lang, output_lang, _ = mc_data.prepareData(data_directory="./")
 	b = mc_data.get_batch(data_directory="./", batch_size=2)
+	mc_data.get_word_embeddings(data_directory="./")
 	for batch in tqdm.tqdm(b):
 		# print()
 		# batch = next(b)
