@@ -163,7 +163,8 @@ class MUSTCData(object):
 		fasttext_file = os.path.join(data_directory, self.l2 + ".fasttext.npy")
 		embedding = np.load(fasttext_file)
 		embedding = embedding[:self.output_lang.n_words]
-		print(embedding.shape)
+		# print(embedding.shape)
+		return embedding
 
 
 	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False, min_sent_len=1):
