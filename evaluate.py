@@ -46,9 +46,10 @@ if __name__ == '__main__':
 
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=False)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
+	embeddings = torch.tensor(mc_data_train.get_word_embeddings().T, device=device)
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=False)
 	if DEBUG: print("DIM", output_lang.n_words)
-	seq = baselineAlt.Seq2Seq(output_lang.n_words-4).to(device)
+	seq = baselineAlt.Seq2Seq(output_lang.n_words, embeddings).to(device)
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
@@ -81,7 +82,7 @@ if __name__ == '__main__':
 
 
 		with torch.no_grad():
-			b = mc_data.get_batch(batch_size=32,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_sent_len*150)
+			b = mc_data.get_batch(batch_size=64,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_sent_len*150)
 			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
