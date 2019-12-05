@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import model1 as baselineAlt
+>>>>>>> Bugfixes for eval
 import numpy as np
 import random, tqdm, os, sys
 
