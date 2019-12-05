@@ -44,7 +44,7 @@ if __name__ == '__main__':
 		print("Usage : python evaluate.py <model_path> [<word|char> [<max_sent_len>]]")
 		exit(1)
 
-	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
+	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=False)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
 	if DEBUG: print("DIM", output_lang.n_words)
