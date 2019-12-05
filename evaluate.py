@@ -1,4 +1,4 @@
-import baselineAlt
+import model1 as baselineAlt
 import numpy as np
 import random, tqdm, os, sys
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
 	if DEBUG: print("DIM", output_lang.n_words)
-	seq = baselineAlt.Seq2Seq(output_lang.n_words).to(device)
+	seq = baselineAlt.Seq2Seq(output_lang.n_words-4).to(device)
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
