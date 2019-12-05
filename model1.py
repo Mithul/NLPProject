@@ -203,9 +203,14 @@ class Seq2Seq(nn.Module):
 		super(Seq2Seq, self).__init__()
 		self.n_layers = 4
 		self.hidden_dim = 256
-		self.embeddings = embeddings
-		if self.embeddings is not None:
-			self.target_dim = self.embeddings.size(0)
+		self.embeddings_manual = None
+		if embeddings is not None:
+			self.embeddings_manual = nn.Linear(embeddings.size(0), embeddings.size(1))
+			# print("T", self.embeddings_manual.weight.size())
+			self.embeddings_manual.weight = torch.nn.Parameter(embeddings.T)
+			# print("T", self.embeddings_manual.weight.size())
+			self.embeddings_manual.bias = torch.nn.Parameter(torch.zeros(embeddings.size(1)))
+			self.target_dim = embeddings.size(0)
 		else:
 			self.target_dim = target_dim
 		self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
@@ -252,8 +257,11 @@ class Seq2Seq(nn.Module):
 			#receive output tensor (predictions) and new hidden state
 			#output, hidden = self.decoder(input, attention_context)
 			output = self.decoder.forward(input)
-			if self.embeddings is not None:
-				output = torch.matmul(output, self.embeddings)
+			# print("OP", output.size())
+			if self.embeddings_manual is not None:
+				# print("OP", self.embeddings_manual)
+				output = self.embeddings_manual(output)
+				# print("OP", output.size())
 
 			#place predictions in a tensor holding predictions for each token
 			#decide if we are going to use teacher forcing or not
@@ -296,13 +304,15 @@ class Seq2Seq(nn.Module):
 		return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 	def init_weights(self):
-	    def _init_weights(model):
-	        for name, param in model.named_parameters():
-	            if 'weight' in name:
-	                nn.init.normal_(param.data, mean=0, std=0.01)
-	            else:
-	                nn.init.constant_(param.data, 0)
-	    self.apply(_init_weights)
+		def _init_weights(model):
+			for name, param in model.named_parameters():
+				if 'manual' in name:
+					continue
+				if 'weight' in name:
+				    nn.init.normal_(param.data, mean=0, std=0.01)
+				else:
+				    nn.init.constant_(param.data, 0)
+		self.apply(_init_weights)
 
 def get_batch(iterator, lang):
 	for batch in iterator:
@@ -389,7 +399,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=16, buffer_factor=32, max_sent_len=10, min_sent_len=3, max_frames=1000)
+		b = mc_data.get_batch(batch_size=96, buffer_factor=32, max_sent_len=10, min_sent_len=3, max_frames=1000)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -416,7 +426,7 @@ if __name__ == '__main__':
 
 				seq.train()
 
-				tf_ratio = 0#(REPEAT_TIMES - repeat - 1)/REPEAT_TIMES
+				tf_ratio = 0.4#(REPEAT_TIMES - repeat - 1)/REPEAT_TIMES
 				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = tf_ratio)
 
 
