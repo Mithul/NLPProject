@@ -4,3 +4,8 @@ __pycache__/
 dataset/data/__pycache__/
 dataset/data/eng-fra.txt
 dataset/data/names/
+*.model
+*.bleu
+*.bak
+*.model.gz
+*.tar.gz
