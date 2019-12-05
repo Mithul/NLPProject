@@ -1,5 +1,6 @@
 import numpy as np
 import random, tqdm, os
+from evaluate import get_bleu_score
 
 import torch
 import torch.nn.functional as F
@@ -12,7 +13,6 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from evaluate import get_bleu_score
 
 DEBUG = False
 
@@ -78,6 +78,7 @@ class Encoder(nn.Module):
 		attn_score = attn_score.unsqueeze(1)
 		h_op = h_op.permute(0,2,1)
 		if DEBUG:print(h_op.size())
+		# print("H_OP", h_op.size(), attn_score.size())
 		sa_context = torch.bmm(h_op,attn_score)
 		if DEBUG:print("sa_context:",sa_context.size())
 		h_op = h_op.permute(2,0,1)
@@ -389,7 +390,7 @@ if __name__ == '__main__':
 	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 1
+	REPEAT_TIMES = 10
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -399,14 +400,14 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=96, buffer_factor=32, max_sent_len=10, min_sent_len=3, max_frames=1000)
+		b = mc_data.get_batch(batch_size=4, buffer_factor=32, max_sent_len=6, min_sent_len=3, max_frames=1000)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
 				print("ITER", iter)
-				# shuffled_indeces = torch.randperm(speech_feats.size(0))
-				# speech_feats = speech_feats[shuffled_indeces]
-				# sentence_feats = sentence_feats[shuffled_indeces]
+				shuffled_indeces = torch.randperm(speech_feats.size(0))
+				speech_feats = speech_feats[shuffled_indeces]
+				sentence_feats = sentence_feats[shuffled_indeces]
 
 				if start_iter is not None:
 					if start_iter > iter:

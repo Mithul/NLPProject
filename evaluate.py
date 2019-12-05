@@ -1,4 +1,3 @@
-import model1 as baselineAlt
 import numpy as np
 import random, tqdm, os, sys
 
@@ -44,6 +43,7 @@ if __name__ == '__main__':
 		print("Usage : python evaluate.py <model_path> [<word|char> [<max_sent_len>]]")
 		exit(1)
 
+	import model1 as baselineAlt
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=False)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	embeddings = torch.tensor(mc_data_train.get_word_embeddings().T, device=device)
