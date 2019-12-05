@@ -199,13 +199,17 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-	def __init__(self, target_dim):
+	def __init__(self, target_dim, embeddings=None):
 		super(Seq2Seq, self).__init__()
 		self.n_layers = 4
 		self.hidden_dim = 256
-		self.target_dim = target_dim
+		self.embeddings = embeddings
+		if self.embeddings is not None:
+			self.target_dim = self.embeddings.size(0)
+		else:
+			self.target_dim = target_dim
 		self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
-		self.decoder = Decoder(target_dim, self.hidden_dim, self.hidden_dim*2, self.hidden_dim*2, self.n_layers, target_dim) # output_dim, dec_hidden_dim, enc_hidden_dim, attention_dim, n_layers
+		self.decoder = Decoder(self.target_dim, self.hidden_dim, self.hidden_dim*2, self.hidden_dim*2, self.n_layers, target_dim) # output_dim, dec_hidden_dim, enc_hidden_dim, attention_dim, n_layers
 		self.loss = nn.CrossEntropyLoss(ignore_index = PAD_token)
 		# self.enc_optim = optim.Adam(self.encoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 		# self.dec_optim = optim.Adam(self.decoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
@@ -248,6 +252,8 @@ class Seq2Seq(nn.Module):
 			#receive output tensor (predictions) and new hidden state
 			#output, hidden = self.decoder(input, attention_context)
 			output = self.decoder.forward(input)
+			if self.embeddings is not None:
+				output = torch.matmul(output, self.embeddings)
 
 			#place predictions in a tensor holding predictions for each token
 			#decide if we are going to use teacher forcing or not
@@ -315,18 +321,20 @@ def get_batch(iterator, lang):
 if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=False)
 	input_lang, output_lang, _ = mc_data.prepareData()
+	embeddings = torch.tensor(mc_data.get_word_embeddings().T, device=device)
+	print(embeddings.size())
 
 	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=False)
 
 	if DEBUG: print("DIM", output_lang.n_words)
-	seq = Seq2Seq(output_lang.n_words).to(device)
+	seq = Seq2Seq(output_lang.n_words, embeddings).to(device)
 	seq.init_weights()
-	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
+	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Self_attention_word")
+	writer = SummaryWriter("Self_attention_word_fasttext")
 
-	SAVE_PATH = "Self_attention_word.model"
+	SAVE_PATH = "Self_attention_word_fasttext.model"
 
 	iter = 0
 
