@@ -324,15 +324,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-<<<<<<< HEAD
-	writer = SummaryWriter("Self_attention")
-
-	SAVE_PATH = "Self_attention.model"
-=======
 	writer = SummaryWriter("Self_attention_word")
 
 	SAVE_PATH = "Self_attention_word.model"
->>>>>>> c03ca0b... Changes for word level model
 
 	iter = 0
 
