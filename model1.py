@@ -313,10 +313,10 @@ def get_batch(iterator, lang):
 
 
 if __name__ == '__main__':
-	mc_data = Dataset('en', 'de', character_level=True)
+	mc_data = Dataset('en', 'de', character_level=False)
 	input_lang, output_lang, _ = mc_data.prepareData()
 
-	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=True)
+	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=False)
 
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
