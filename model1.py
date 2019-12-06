@@ -16,6 +16,17 @@ from evaluate import get_bleu_score
 
 DEBUG = False
 
+WEIGHT_LOG_FREQ = 100
+SENT_LOG_FREQ = 40
+BLEU_FREQ = 50
+SAVE_FREQ = 50
+BATCH_SIZE = 96
+SAMPLES_IN_MEMORY = 1500
+BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+MAX_SENT_LEN = 10
+MIN_SENT_LEN = 4
+MAX_FRAMES = 1000
+
 class Pyramidal(nn.Module):
 	def __init__(self,input_dim,hidden_dim,n_layers):
 		super(Pyramidal,self).__init__()
@@ -33,7 +44,7 @@ class Pyramidal(nn.Module):
 		out,(h,c) = self.LSTM[0](input,(h,c))
 		print("out:",out.size())
 		for i in range(1,self.n_layers):
-			#t x b x hidden_dim 
+			#t x b x hidden_dim
 			timestep = out.size(0)
 			batch_size = out.size(1)
 			dim = out.size(2)
@@ -45,7 +56,6 @@ class Pyramidal(nn.Module):
 			out,(h,c) = self.LSTM[i](out,(h,c))
 
 		return out , (h,c)
-
 
 
 class Encoder(nn.Module):
@@ -96,40 +106,6 @@ class Encoder(nn.Module):
 		if DEBUG: print("shapeOut",outputs.size())
 		if DEBUG: print("shapeH",h.size())
 		if DEBUG: print("shapeC",c.size())
-
-		'''h_op = outputs[-1] #ts x batch x 512
-		if DEBUG:print("h_op size: ",h_op.size())
-		h_op = h_op.unsqueeze(1)
-		if DEBUG:print("h_op size: ",h_op.size())
-		sa_ip = self.fc2(x.permute(1,0,2))
-		sa_ip = sa_ip.permute(0,2,1)
-		if DEBUG:print("sa_ip: ",sa_ip.size())
-		energy = torch.tanh(torch.bmm(h_op,sa_ip)) #b x ts1 x ts2
-		energy = energy.squeeze()
-		if DEBUG:print("energy:",energy.size())
-		attn_score = self.softmax(energy) # b x ts1
-		if DEBUG:print("attn_score:",attn_score.size())
-		attn_score = attn_score.unsqueeze(1)
-		h_op = h_op.permute(0,2,1)
-		if DEBUG:print(h_op.size())
-		sa_context = torch.bmm(h_op,attn_score)
-		if DEBUG:print("sa_context:",sa_context.size())
-		h_op = h_op.permute(2,0,1)
-		sa_context = sa_context.permute(2,0,1)
-		lstm_ip = torch.cat((h_op,sa_context))
-		if DEBUG:print("CONCATENATED:",lstm_ip.size())
-		#lstm_input = self.fc3(torch.cat(h_op,sa_context).permute(1,0,2))
-
-
-		outputs,(h,c) = self.LSTM_2(lstm_ip,(h,c))
-		# newOutput = []
-		# for out in outputs:
-		# 	newOutput.append(F.relu(self.fc1(out)))
-		# out = torch.stack(newOutput)
-		out = F.relu(self.fc1(outputs))
-		if DEBUG: print("shapeOut2",out.size())
-		return out,h,c
-		'''
 		#out = F.relu((self.fc1(h[-2, :, :] + h[-1, :, :])))
 		out = F.relu((self.fc1(outputs)))
 		if DEBUG: print("shapeOut2",out.size())
@@ -297,7 +273,7 @@ class Seq2Seq(nn.Module):
 			# if DEBUG: print("outputs :",outputs.size(),"Targets: ",trg.size())
 
 			loss += self.loss(output[:,:],trg[:,t].long())
-			
+
 			#if teacher forcing, use actual next token as next input
 			#if not, use predicted token
 			input = trg[:,t] if teacher_force else top1.detach()
@@ -359,9 +335,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Self_attention_word")
+	writer = SummaryWriter("pyramid_word")
 
-	SAVE_PATH = "Self_attention_word.model"
+	SAVE_PATH = "pyramid_word.model"
 
 	iter = 0
 
@@ -416,7 +392,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
+		b = mc_data.get_batch(batch_size=BATCH_SIZE, buffer_factor=BUFFER_FACTOR, max_sent_len=MAX_SENT_LEN, min_sent_len=MIN_SENT_LEN, max_frames=MAX_FRAMES)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -473,14 +449,15 @@ if __name__ == '__main__':
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
 				for output,trgt in zip(outputs[:4],trg[:4]):
-					writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
-					writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-					print("O", output_lang.get_sentence(output))
+					if iter % SENT_LOG_FREQ == 0:
+						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+					print("O", output_lang.get_sentence(output), output)
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
 
-				if iter%10 == 0 or (loss_checkpoint > loss.item()):
+				if iter % WEIGHT_LOG_FREQ == 0 or (loss_checkpoint > loss.item()):
 					for n, pr in seq.named_parameters():
 						 if pr.requires_grad:
 							 tag = "weights/"+n
@@ -490,11 +467,11 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0:
+				if iter % BLEU_FREQ == 0:
 					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
 					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
+				if iter % SAVE_FREQ == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
 					loss_checkpoint = dev_loss.item()
 					torch.save({
 			            'epoch': epoch,
