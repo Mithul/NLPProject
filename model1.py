@@ -16,6 +16,17 @@ from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = False
 
+WEIGHT_LOG_FREQ = 100
+SENT_LOG_FREQ = 40
+BLEU_FREQ = 50
+SAVE_FREQ = 50
+BATCH_SIZE = 96
+SAMPLES_IN_MEMORY = 1500
+BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+MAX_SENT_LEN = 10
+MIN_SENT_LEN = 4
+MAX_FRAMES = 1000
+
 class Encoder(nn.Module):
 	def __init__(self,input_dim,input_channels,hidden_dim,output_dim,n_layers):
 		super(Encoder,self).__init__()
@@ -57,45 +68,10 @@ class Encoder(nn.Module):
 		if DEBUG: print("shapeOut",outputs.size())
 		if DEBUG: print("shapeH",h.size())
 		if DEBUG: print("shapeC",c.size())
-<<<<<<< HEAD
-
-		h_op = outputs[-1] #ts x batch x 512
-		if DEBUG:print("h_op size: ",h_op.size())
-		h_op = h_op.unsqueeze(1)
-		if DEBUG:print("h_op size: ",h_op.size())
-		sa_ip = self.fc2(x.permute(1,0,2))
-		sa_ip = sa_ip.permute(0,2,1)
-		if DEBUG:print("sa_ip: ",sa_ip.size())
-		energy = torch.tanh(torch.bmm(h_op,sa_ip)) #b x ts1 x ts2
-		energy = energy.squeeze()
-		if DEBUG:print("energy:",energy.size())
-		attn_score = self.softmax(energy) # b x ts1
-		if DEBUG:print("attn_score:",attn_score.size())
-		attn_score = attn_score.unsqueeze(1)
-		h_op = h_op.permute(0,2,1)
-		if DEBUG:print(h_op.size())
-		# print("H_OP", h_op.size(), attn_score.size())
-		sa_context = torch.bmm(h_op,attn_score)
-		if DEBUG:print("sa_context:",sa_context.size())
-		h_op = h_op.permute(2,0,1)
-		sa_context = sa_context.permute(2,0,1)
-		lstm_ip = torch.cat((h_op,sa_context))
-		if DEBUG:print("CONCATENATED:",lstm_ip.size())
-		#lstm_input = self.fc3(torch.cat(h_op,sa_context).permute(1,0,2))
-
-
-		outputs,(h,c) = self.LSTM_2(lstm_ip,(h,c))
-		# newOutput = []
-		# for out in outputs:
-		# 	newOutput.append(F.relu(self.fc1(out)))
-		# out = torch.stack(newOutput)
-		out = F.relu(self.fc1(outputs))
-=======
 		newOutput = []
 		for out in outputs:
 			newOutput.append(F.relu(self.fc1(out)))
 		out = torch.stack(newOutput)
->>>>>>> Temp commit
 		if DEBUG: print("shapeOut2",out.size())
 		return out,h,c
 		'''
@@ -401,7 +377,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=4, buffer_factor=32, max_sent_len=6, min_sent_len=3, max_frames=1000)
+		b = mc_data.get_batch(batch_size=BATCH_SIZE, buffer_factor=BUFFER_FACTOR, max_sent_len=MAX_SENT_LEN, min_sent_len=MIN_SENT_LEN, max_frames=MAX_FRAMES)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -443,15 +419,15 @@ if __name__ == '__main__':
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
 				for output,trgt in zip(outputs[:4],trg[:4]):
-					if iter%100 == 0:
+					if iter % SENT_LOG_FREQ == 0:
 						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
 						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-					print("O", output_lang.get_sentence(output))
+					print("O", output_lang.get_sentence(output), output)
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
 
-				if iter%200 == 0 or (loss_checkpoint > loss.item()):
+				if iter % WEIGHT_LOG_FREQ == 0 or (loss_checkpoint > loss.item()):
 					for n, pr in seq.named_parameters():
 						 if pr.requires_grad:
 							 tag = "weights/"+n
@@ -461,11 +437,11 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0:
+				if iter % BLEU_FREQ == 0:
 					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
 					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%20 == 0):
+				if iter % SAVE_FREQ == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
 					loss_checkpoint = dev_loss.item()
 					torch.save({
 			            'epoch': epoch,
