@@ -16,6 +16,17 @@ from evaluate import get_bleu_score
 
 DEBUG = False
 
+WEIGHT_LOG_FREQ = 100
+SENT_LOG_FREQ = 40
+BLEU_FREQ = 50
+SAVE_FREQ = 50
+BATCH_SIZE = 96
+SAMPLES_IN_MEMORY = 1500
+BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+MAX_SENT_LEN = 10
+MIN_SENT_LEN = 4
+MAX_FRAMES = 1000
+
 class Encoder(nn.Module):
 	def __init__(self,input_dim,input_channels,hidden_dim,output_dim,n_layers):
 		super(Encoder,self).__init__()
@@ -348,7 +359,7 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
+		b = mc_data.get_batch(batch_size=BATCH_SIZE, buffer_factor=BUFFER_FACTOR, max_sent_len=MAX_SENT_LEN, min_sent_len=MIN_SENT_LEN, max_frames=MAX_FRAMES)
 
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
@@ -405,14 +416,15 @@ if __name__ == '__main__':
 				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
 				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
 				for output,trgt in zip(outputs[:4],trg[:4]):
-					writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
-					writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-					print("O", output_lang.get_sentence(output))
+					if iter % SENT_LOG_FREQ == 0:
+						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+					print("O", output_lang.get_sentence(output), output)
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
 
-				if iter%10 == 0 or (loss_checkpoint > loss.item()):
+				if iter % WEIGHT_LOG_FREQ == 0 or (loss_checkpoint > loss.item()):
 					for n, pr in seq.named_parameters():
 						 if pr.requires_grad:
 							 tag = "weights/"+n
@@ -422,11 +434,11 @@ if __name__ == '__main__':
 							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
 							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0:
+				if iter % BLEU_FREQ == 0:
 					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
 					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
-				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
+				if iter % SAVE_FREQ == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
 					loss_checkpoint = dev_loss.item()
 					torch.save({
 			            'epoch': epoch,
