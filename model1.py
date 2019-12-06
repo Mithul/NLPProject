@@ -1,5 +1,5 @@
 import numpy as np
-import random, tqdm, os
+import random, tqdm, os, time
 
 import torch
 import torch.nn.functional as F
@@ -298,25 +298,17 @@ class Seq2Seq(nn.Module):
 	                nn.init.constant_(param.data, 0)
 	    self.apply(_init_weights)
 
-def get_batch(iterator, lang):
-	for batch in iterator:
-		speech_batch = []
-		sentence_batch = []
-		for speech_feats, sentence in batch:
-			speech_batch.append(torch.tensor(speech_feats, dtype=torch.float, device=device))
-			x = lang.tensorFromSentence(sentence, device)
-			sentence_batch.append(x)
-
-		speech_batch = torch.nn.utils.rnn.pad_sequence(speech_batch, batch_first=True, padding_value=PAD_token)
-		sentence_batch = torch.nn.utils.rnn.pad_sequence(sentence_batch, batch_first=True, padding_value=PAD_token)
-		yield speech_batch, sentence_batch
-
-
 if __name__ == '__main__':
 	mc_data = Dataset('en', 'de', character_level=True)
-	input_lang, output_lang, _ = mc_data.prepareData()
+	input_lang, output_lang, _ = mc_data.prepareData(max_sent_len=8)
+
+	dataloader = torch.utils.data.DataLoader(mc_data, batch_size=64, shuffle=True, num_workers=2, collate_fn=mc_data.collater)
+	# dataloader = DataLoader(mc_data, batch_size=4, shuffle=True, num_workers=4)
+
 
 	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=True)
+	dev_input_lang, dev_output_lang, _ = mc_dev_data.prepareData(max_sent_len=10)
+	dev_dataloader = torch.utils.data.DataLoader(mc_data, batch_size=32, shuffle=True, num_workers=0, collate_fn=mc_dev_data.collater)
 
 	if DEBUG: print("DIM", output_lang.n_words)
 	seq = Seq2Seq(output_lang.n_words).to(device)
@@ -324,9 +316,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Self_attention")
+	writer = SummaryWriter("Self_attention.test")
 
-	SAVE_PATH = "Self_attention.model"
+	SAVE_PATH = "Self_attention.test.model"
 
 	iter = 0
 
@@ -368,10 +360,14 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
-	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
+	for dev_batch in dev_dataloader:
+		dev_speech_feats, dev_sentence_feats = dev_batch
+		dev_speech_feats = dev_speech_feats.to(device, non_blocking=True)
+		dev_sentence_feats = dev_sentence_feats.to(device, non_blocking=True)
+		break
 
-	REPEAT_TIMES = 5
+	REPEAT_TIMES = 1
+	MAX_FEATS_LEN = 1000
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -381,113 +377,98 @@ if __name__ == '__main__':
 				start_epoch = None
 
 		iter = 0
-		b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
+		# b = mc_data.get_batch(batch_size=96, max_sent_len=10, min_sent_len=4, max_frames=1000)
 
-		for speech_feats, sentence_feats in get_batch(b, output_lang):
+		for speech_feats, sentence_feats in dataloader:
+			if speech_feats.size(1) > MAX_FEATS_LEN:
+				print("too many feats. Skipping")
+				continue
+			try:
+				speech_feats = speech_feats.to(device, non_blocking=True)
+				sentence_feats = sentence_feats.to(device, non_blocking=True)
+			except:
+				continue
+				print("Input too big, skipping")
+
 			for repeat in range(REPEAT_TIMES):
-				print("ITER", iter)
-				shuffled_indeces = torch.randperm(speech_feats.size(0))
+				try:
+					print("ITER", iter)
+					if start_iter is not None:
+						if start_iter > iter:
+							iter += 1
+							continue
+						if start_iter == iter:
+							start_iter = None
 
-				speech_feats = speech_feats[shuffled_indeces]
-				sentence_feats = sentence_feats[shuffled_indeces]
-				if start_iter is not None:
-					if start_iter > iter:
-						iter += 1
-						continue
-					if start_iter == iter:
-						start_iter = None
+					seq_optim.zero_grad()
+					seq.train()
+					f = speech_feats
+					trg= sentence_feats
 
-				seq_optim.zero_grad()
-				# if DEBUG: print(speech_feats)
-				# if DEBUG: print(sentence)
-				# if DEBUG: print(output_lang.tensorFromSentence(sentence, device))
-				# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
+					print("f",f.size())
+					print("trg",trg.size())
 
-				if DEBUG: print("START")
-				f = speech_feats#torch.tensor(speech_feats, device=device)
-				# f = f.view(3,1,qwe,asd)
-				# qwe = f.size(0)
-				# asd = f.size(1)
-				# f = torch.cat((f,f,f))
-				# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
-				trg= sentence_feats
-				# tr=[]
-				# for t in trg:
-				# 	tmp = [0]*64
-				# 	tmp[ord(t)-ord('a')]= 1
-				# 	tr.append(tmp)
-				# trg = [tr[:],tr[:],tr[:]]
-				# trg = torch.FloatTensor(trg)
-				print("f",f.size())
-				print("trg",trg.size())
+					seq.train()
+					outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
+					loss.backward()
+					torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
+					seq_optim.step()
 
-				if DEBUG: print("F", f.size())
+					seq.eval()
+					dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
+					print("LOSS", loss.item(), dev_loss.item())
 
-				seq.train()
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
+					writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
+					writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
+					for output,trgt in zip(outputs[:4],trg[:4]):
+						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
+						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
+						print("O", len(output), output_lang.get_sentence(output))
+						print("T", len(trgt), output_lang.get_sentence(trgt))
+						# print(forced)
+						# break
 
+					if iter%10 == 0 or (loss_checkpoint > loss.item()):
+						for n, pr in seq.named_parameters():
+							 if pr.requires_grad:
+								 tag = "weights/"+n
+								 writer.add_histogram(tag+"/raw", pr, iters_per_epoch*epoch + iter)
+								 writer.add_scalar(tag+"/max", torch.max(pr).item(), iters_per_epoch*epoch + iter)
+								 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
+								 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
+								 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
 
-				loss.backward()
-				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
-				seq_optim.step()
+					if iter%50 == 0:
+						writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
+						writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
 
-				seq.eval()
-				dev_outputs, dev_loss, dev_forced = seq(dev_speech_feats, dev_sentence_feats, teacher_forcing_ratio = 0)
-				print("LOSS", loss.item(), dev_loss.item())
+					if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
+						loss_checkpoint = dev_loss.item()
+						torch.save({
+				            'epoch': epoch,
+				            'iter': iter,
+							'iters_per_epoch': iters_per_epoch,
+				            'model_state_dict': seq.state_dict(),
+				            'optimizer_state_dict': seq_optim.state_dict(),
+				            'loss': loss,
+				            }, SAVE_PATH)
+						# checkpoint = torch.load(SAVE_PATH)
+						# seq.load_state_dict(checkpoint['model_state_dict'])
+						# seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
+						# epoch = checkpoint['epoch']
+						# start_iter = checkpoint['iter']
+						# loss = checkpoint['loss']
+						# iters_per_epoch = checkpoint['iters_per_epoch']
+						# print("Loaded", epoch, start_iter, loss, iters_per_epoch)
 
-				writer.add_scalar('Loss/train', loss, iters_per_epoch*epoch + iter)
-				writer.add_scalar('Loss/dev', dev_loss, iters_per_epoch*epoch + iter)
-				for output,trgt in zip(outputs[:4],trg[:4]):
-					writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
-					writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-					print("O", output_lang.get_sentence(output))
-					print("T", output_lang.get_sentence(trgt))
-					# print(forced)
-					# break
-
-				if iter%10 == 0 or (loss_checkpoint > loss.item()):
-					for n, pr in seq.named_parameters():
-						 if pr.requires_grad:
-							 tag = "weights/"+n
-							 writer.add_histogram(tag+"/raw", pr, iters_per_epoch*epoch + iter)
-							 writer.add_scalar(tag+"/max", torch.max(pr).item(), iters_per_epoch*epoch + iter)
-							 writer.add_scalar(tag+"/min", torch.min(pr).item(), iters_per_epoch*epoch + iter)
-							 writer.add_scalar(tag+"/mean", torch.mean(pr).item(), iters_per_epoch*epoch + iter)
-							 writer.add_scalar(tag+"/stddev", torch.std(pr).item(), iters_per_epoch*epoch + iter)
-
-				if iter%50 == 0:
-					writer.add_scalar('BLEU/char', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='char')[0], iters_per_epoch*epoch + iter)
-					writer.add_scalar('BLEU/word', get_bleu_score(dev_outputs, dev_sentence_feats, output_lang, bleu_level='word')[0], iters_per_epoch*epoch + iter)
-
-				if iter%50 == 0 or (loss_checkpoint > dev_loss.item() and iter%10 == 0):
-					loss_checkpoint = dev_loss.item()
-					torch.save({
-			            'epoch': epoch,
-			            'iter': iter,
-						'iters_per_epoch': iters_per_epoch,
-			            'model_state_dict': seq.state_dict(),
-			            'optimizer_state_dict': seq_optim.state_dict(),
-			            'loss': loss,
-			            }, SAVE_PATH)
-					# checkpoint = torch.load(SAVE_PATH)
-					# seq.load_state_dict(checkpoint['model_state_dict'])
-					# seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
-					# epoch = checkpoint['epoch']
-					# start_iter = checkpoint['iter']
-					# loss = checkpoint['loss']
-					# iters_per_epoch = checkpoint['iters_per_epoch']
-					# print("Loaded", epoch, start_iter, loss, iters_per_epoch)
-
-				# else: #TODO : Run loss on val set to check for improvement/restoring to previous state
-				# 	if os.path.exists(SAVE_PATH):
-				# 		checkpoint = torch.load(SAVE_PATH)
-				# 		seq.load_state_dict(checkpoint['model_state_dict'])
-				# 		seq_optim.load_state_dict(checkpoint['optimizer_state_dict'])
-				# 		epoch = checkpoint['epoch']
-				# 		start_iter = checkpoint['iter']
-				# 		loss = checkpoint['loss']
-				# 		iters_per_epoch = checkpoint['iters_per_epoch']
-				# 		print("Loaded", epoch, start_iter, loss, iters_per_epoch)
-				iter += 1
-
+					iter += 1
+				except:
+					seq.zero_grad()
+					del speech_feats
+					del sentence_feats
+					print("B", torch.cuda.memory_allocated())
+					torch.cuda.empty_cache()
+					print("A", torch.cuda.memory_allocated())
+					print("Error with batch")
+					exit()
 		iters_per_epoch = iter

@@ -143,7 +143,7 @@ class WavData(object):
 		return "WAV_DATA"
 
 class MUSTCData(object):
-	def __init__(self, l1, l2, dataset_type = "train", character_level=False, delta=False, delta_delta=False):
+	def __init__(self, l1, l2, dataset_type = "train", character_level=False, delta=False, delta_delta=False, data_directory="./data", device='cpu'):
 		self.l1 = l1
 		self.l2 = l2
 		self.dataset_type = dataset_type
@@ -154,102 +154,78 @@ class MUSTCData(object):
 		else:
 			self.output_lang = Lang(l2)
 
-	def get_batch(self, data_directory="./data", batch_size = 1, max_sent_len=6, max_frames=600, buffer_factor=8, sort_len=False, min_sent_len=1):
+		self.unproc_data = []
+		self.data_directory = data_directory
+		self.device = device
+
+	def _get_unproc_data_lines(self, data_directory="./data", min_sent_len=None, max_sent_len=None):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
-		feats = os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")
-		batches = []
-		batch = []
+		feats = open(os.path.join(data_directory, "features/" + self.dataset_type + "/feats/feat.tokenized.tsv")).readlines()
+		if min_sent_len is not None:
+			feats = filter(lambda d: len(d.split("\t")[7].split(" ")) >= min_sent_len, feats)
+		if max_sent_len is not None:
+			feats = filter(lambda d: len(d.split("\t")[7].split(" ")) <= max_sent_len, feats)
+		return list(feats)
 
-		def chunks(a, n):
-			"""Yield successive n-sized chunks from l."""
-			n = max(1, n)
-			return (a[i:i+n] for i in range(0, len(a), n))
+	def __len__(self):
+		return len(self.unproc_data)
 
-		for i, line in enumerate(open(feats)):
-			if len(batch) >= batch_size:
-				# yield batch
-				batches.append(batch)
-				batch = []
-				if len(batches) >= buffer_factor:
-					if not sort_len:
-						for batch in batches:
-							yield batch
-					else:
-						all_speech_feats = []
-						all_sentences = []
-						for batch in batches:
-							for speech_feat, sentence in batch:
-								all_speech_feats.append(speech_feat)
-								all_sentences.append(sentence)
+	def __getitem__(self, index):
+		data_directory = self.data_directory
+		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
+		max_sent_len=6
+		max_frames=600
+		# buffer_factor=8
+		# sort_len=False
+		min_sent_len=1
 
-						# all_speech_feats = sorted(all_speech_feats, key=lambda d: len(d))
-						# all_sentences = sorted(all_sentences, key=lambda d: len(d))
-						# print(list(map(lambda d: len(d), all_speech_feats)))
-						# print(list(map(lambda d: len(d), all_sentences)))
+		line = self.unproc_data[index]
+		l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
+		# if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len and len(l2_tokenized_s.strip().lower().split(" ")) > min_sent_len:
+		# 	if ":" in set(l2_tokenized_s.strip().lower().split(" ")):
+		# 		continue
+		featfile = os.path.join(data_directory, featfile)
+		speech_feats = self.input_lang.get_feats(np.load(featfile))
+		# 	if len(speech_feats) < max_frames:
+		return [speech_feats, l2_tokenized_s.strip().lower()]
 
-						combined_data = list(zip(all_speech_feats, all_sentences))
-						combined_data = list(sorted(combined_data, key=lambda d: [len(d[1]), len(d[0])]))
-						batches = chunks(combined_data, batch_size)
-						for batch in batches:
-							yield batch
-						# print(i, len(all_speech_feats))
-
-					batches = []
-				batch = []
-
-				# break
-
-			l1_sentence, l2_sentence, featfile, _, _, _, l1_s, l2_tokenized_s = line.split("\t")
-			if len(l2_tokenized_s.strip().lower().split(" ")) < max_sent_len and len(l2_tokenized_s.strip().lower().split(" ")) > min_sent_len:
-				if ":" in set(l2_tokenized_s.strip().lower().split(" ")):
-					continue
-				featfile = os.path.join(data_directory, featfile)
-				speech_feats = self.input_lang.get_feats(np.load(featfile))
-				if len(speech_feats) < max_frames:
-					batch.append([speech_feats, l2_tokenized_s.strip().lower()])
-
-		if len(batch) > 0:
-			yield batch
-
-	def prepareData(self, data_directory="./data", reverse=False):
+	def prepareData(self, min_sent_len=None, max_sent_len=None, reverse=False):
+		data_directory = self.data_directory
+		self.unproc_data = self._get_unproc_data_lines(data_directory, min_sent_len=min_sent_len, max_sent_len=max_sent_len)
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		words_file = os.path.join(data_directory, self.l2 + ".words")
 		with open(words_file) as f:
 			for line in f:
 				word = line.strip()
 				self.output_lang.addWord(word)
+
 		return self.input_lang, self.output_lang, None
 
-	def tensorsFromPair(self, pair, device):
-		input_tensor = self.input_lang.tensorFromSentence(pair[0], device)
-		target_tensor = self.output_lang.tensorFromSentence(pair[1], device)
+	def tensorsFromPair(self, pair):
+		input_tensor = self.input_lang.tensorFromSentence(pair[0], self.device)
+		target_tensor = self.output_lang.tensorFromSentence(pair[1], self.device)
 		return (input_tensor, target_tensor)
 
 
+	def collater(self, batch):
+		# print(batch)
+		speech_batch = []
+		sentence_batch = []
+		for speech_feats, sentence in batch:
+			speech_batch.append(torch.tensor(speech_feats, dtype=torch.float, device=self.device))
+			x = self.output_lang.tensorFromSentence(sentence, self.device)
+			sentence_batch.append(x)
+
+		speech_batch = torch.nn.utils.rnn.pad_sequence(speech_batch, batch_first=True, padding_value=PAD_token)
+		sentence_batch = torch.nn.utils.rnn.pad_sequence(sentence_batch, batch_first=True, padding_value=PAD_token)
+		return speech_batch, sentence_batch
+
 if __name__ == '__main__':
-	mc_data = MUSTCData('en', 'de', character_level=False, delta=True, delta_delta=True)
-	input_lang, output_lang, _ = mc_data.prepareData(data_directory="./")
-	b = mc_data.get_batch(data_directory="./", batch_size=2)
-	for batch in tqdm.tqdm(b):
-		# print()
-		# batch = next(b)
-		for speech_feats, sentence in batch:
-			print(speech_feats)
-			print(sentence)
-			# print(len(speech_feats), len(sentence.split(" ")))
-			# print(output_lang.tensorFromSentence(sentence, 'cpu'))
-			# print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, 'cpu')))
-			pass
+	mc_data = MUSTCData('en', 'de', character_level=False, data_directory="./")
+	input_lang, output_lang, _ = mc_data.prepareData(min_sent_len=3, max_sent_len=10)
+	# print(mc_data[1])
+	dataloader = torch.utils.data.DataLoader(mc_data, batch_size=4, shuffle=True, num_workers=1, collate_fn=mc_data.collater)
+	for sp, sen in tqdm.tqdm(dataloader):
+		# pass
+		print(sp.size(), sen.size())
 		break
-
-	mc_dev_data = MUSTCData('en', 'de', dataset_type="dev", character_level=False, delta=True, delta_delta=True)
-	b_dev = mc_data.get_batch(data_directory="./", batch_size=2)
-	for batch in tqdm.tqdm(b):
-		for speech_feats, sentence in batch:
-			print(speech_feats, speech_feats.shape)
-			print(sentence)
-			pass
-		break
-
-	# i, o, p = yn_data.prepareData()
-	# print(yn_data.tensorsFromPair(p[0], 'cuda')[0].size())
