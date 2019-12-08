@@ -1,4 +1,4 @@
-import baselineAlt
+import model1
 import numpy as np
 import random, tqdm, os
 
@@ -17,14 +17,14 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-DEBUG = False
+DEBUG = True
 
 if __name__ == '__main__':
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
 	if DEBUG: print("DIM", output_lang.n_words)
-	seq = baselineAlt.Seq2Seq(output_lang.n_words).to(device)
+	seq = model1.Seq2Seq(output_lang.n_words).to(device)
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
 		with torch.no_grad():
 			b = mc_data.get_batch(batch_size=32,buffer_factor=1)
-			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
+			for speech_feats, sentence_feats in tqdm.tqdm(model1.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
 				f = speech_feats
@@ -70,9 +70,7 @@ if __name__ == '__main__':
 					# print(''.join(out_sen), ''.join(grnd_sen[0]))
 					if "applaus" not in set(''.join(out_sen).split(" ")):
 						score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
-						count = count + 1
-						total_score += score
-					score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
+					#score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
 					score1 = sentence_bleu(grnd_sen1,out_sen1)
 					count = count + 1
 					total_score += score
