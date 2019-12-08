@@ -16,13 +16,15 @@ from evaluate import get_bleu_score
 
 DEBUG = False
 
-WEIGHT_LOG_FREQ = 100
-SENT_LOG_FREQ = 40
-BLEU_FREQ = 50
-SAVE_FREQ = 50
-BATCH_SIZE = 96
+BATCH_SIZE = 16
 SAMPLES_IN_MEMORY = 1500
 BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+
+WEIGHT_LOG_FREQ = 500
+SENT_LOG_FREQ = 200
+BLEU_FREQ = 200
+SAVE_FREQ = 500
+
 MAX_SENT_LEN = 10
 MIN_SENT_LEN = 4
 MAX_FRAMES = 1000
@@ -34,15 +36,15 @@ class Pyramidal(nn.Module):
 		self.hidden_dim = hidden_dim
 		self.n_layers = n_layers
 		self.LSTM = []
-		self.LSTM.append(nn.LSTM(self.input_dim,self.hidden_dim,1,bidirectional=True,dropout=0.3))
+		self.LSTM.append(nn.LSTM(self.input_dim,self.hidden_dim,1,bidirectional=True,dropout=0.3).to(device))
 		for i in range(1,n_layers):
-			self.LSTM.append(nn.LSTM(self.hidden_dim*4,self.hidden_dim,1,bidirectional=True,dropout=0.3))
+			self.LSTM.append(nn.LSTM(self.hidden_dim*4,self.hidden_dim,1,bidirectional=True,dropout=0.3).to(device))
 
 	def forward(self,input,h,c):
 		# input t x b x input_dim
-		print(input.size(),h.size())
+		#print(input.size(),h.size())
 		out,(h,c) = self.LSTM[0](input,(h,c))
-		print("out:",out.size())
+		#print("out:",out.size())
 		for i in range(1,self.n_layers):
 			#t x b x hidden_dim
 			timestep = out.size(0)
@@ -50,9 +52,9 @@ class Pyramidal(nn.Module):
 			dim = out.size(2)
 	        # Reduce time resolution
 			if timestep%2 ==1 :
-				out = torch.cat((out,torch.zeros(1,batch_size,dim)))
+				out = torch.cat((out,torch.zeros(1,batch_size,dim).to(device)), dim=0)
 				timestep +=1
-			out = out.contiguous().view(int(timestep/2),batch_size,dim*2)
+			out = out.permute(1, 0, 2).contiguous().view(batch_size, int(timestep/2), dim*2).permute(1, 0, 2)
 			out,(h,c) = self.LSTM[i](out,(h,c))
 
 		return out , (h,c)
@@ -76,6 +78,7 @@ class Encoder(nn.Module):
 		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
 		self.fc2 = nn.Linear(32*10,self.output_dim)
 		self.fc3 = nn.Linear(768,256)
+		self.pyramid = Pyramidal(32*10,self.hidden_dim,self.n_layers)
 
 		self.softmax = nn.Softmax(dim=-1)
 
@@ -99,8 +102,7 @@ class Encoder(nn.Module):
 		#x : [seq_len/4, batch_size, channels(32) x feature_size]
 		if DEBUG: print("shape3",x.size())
 
-		pyramid = Pyramidal(32*10,self.hidden_dim,self.n_layers)
-		outputs,(h,c) = pyramid(x,h,c)
+		outputs,(h,c) = self.pyramid(x,h,c)
 
 		#if DEBUG: print('sum',torch.sum(outputs[-1]-torch.cat((h[-2, :, :],h[-1, :, :]))))
 		if DEBUG: print("shapeOut",outputs.size())
@@ -379,10 +381,10 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
+	b_dev = mc_dev_data.get_batch(batch_size=4, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 5
+	REPEAT_TIMES = 1
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -435,7 +437,8 @@ if __name__ == '__main__':
 				if DEBUG: print("F", f.size())
 
 				seq.train()
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
+				tf_ratio = 0.4#(REPEAT_TIMES - repeat)/REPEAT_TIMES
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = tf_ratio)
 
 
 				loss.backward()
