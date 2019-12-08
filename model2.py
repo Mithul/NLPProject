@@ -12,7 +12,7 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-DEBUG = True
+DEBUG = False
 
 class Pyramidal(nn.Module):
 	def __init__(self,input_dim,hidden_dim,n_layers):
@@ -51,41 +51,41 @@ class CNN(nn.Module):
 		super(CNN,self).__init__()
 		self.input_channels = input_channels
 		self.conv00 = nn.Conv2d(self.input_channels,32,3,2,1)
-		self.conv01 = nn.Conv2d(32,32,(3,1),1,(1,0),groups = 32)
-		self.conv02 = nn.Conv2d(32,32,(1,3),1,(0,1),groups = 32)
+		self.conv01 = nn.Conv2d(32,32,(3,1),1,(1,0))
+		self.conv02 = nn.Conv2d(32,32,(1,3),1,(0,1))
 		self.conv03 = nn.Conv2d(32,64,(1,1),2,(0,0))
 
-		self.conv11 = nn.Conv2d(64,64,(3,1),1,(1,0),groups = 64)
-		self.conv12 = nn.Conv2d(64,64,(1,3),1,(0,1),groups = 64)
+		self.conv11 = nn.Conv2d(64,64,(3,1),1,(1,0))
+		self.conv12 = nn.Conv2d(64,64,(1,3),1,(0,1))
 		self.conv13 = nn.Conv2d(64,64,(1,1),1,(0,0))
 		#residul add
-		self.conv21 = nn.Conv2d(64,64,(3,1),1,(1,0),groups = 64)
-		self.conv22 = nn.Conv2d(64,64,(1,3),1,(0,1),groups = 64)
+		self.conv21 = nn.Conv2d(64,64,(3,1),1,(1,0))
+		self.conv22 = nn.Conv2d(64,64,(1,3),1,(0,1))
 		self.conv23 = nn.Conv2d(64,128,(1,1),1,(0,0))
 
 
-		self.conv31 = nn.Conv2d(128,128,(3,1),1,(1,0),groups = 128)
-		self.conv32 = nn.Conv2d(128,128,(1,3),1,(0,1),groups = 128)
+		self.conv31 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv32 = nn.Conv2d(128,128,(1,3),1,(0,1))
 		self.conv33 = nn.Conv2d(128,128,(1,1),1,(0,0))
 		#residual add
 
-		self.conv41 = nn.Conv2d(128,128,(3,1),1,(1,0),groups = 128)
-		self.conv42 = nn.Conv2d(128,128,(1,3),1,(0,1),groups = 128)
+		self.conv41 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv42 = nn.Conv2d(128,128,(1,3),1,(0,1))
 		self.conv43 = nn.Conv2d(128,256,(1,1),1,(0,0))
 
 
-		self.conv51 = nn.Conv2d(256,256,(3,1),1,(1,0),groups = 256)
-		self.conv52 = nn.Conv2d(256,256,(1,3),1,(0,1),groups = 256)
+		self.conv51 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv52 = nn.Conv2d(256,256,(1,3),1,(0,1))
 		self.conv53 = nn.Conv2d(256,256,(1,1),1,(0,0))
 		#residual add
 
-		self.conv61 = nn.Conv2d(256,256,(3,1),1,(1,0),groups = 256)
-		self.conv62 = nn.Conv2d(256,256,(1,3),1,(0,1),groups = 256)
+		self.conv61 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv62 = nn.Conv2d(256,256,(1,3),1,(0,1))
 		self.conv63 = nn.Conv2d(256,512,(1,1),1,(0,0))
 
 
-		self.conv71 = nn.Conv2d(512,512,(3,1),1,(1,0),groups = 512)
-		self.conv72 = nn.Conv2d(512,512,(1,3),1,(0,1),groups = 512)
+		self.conv71 = nn.Conv2d(512,512,(3,1),1,(1,0))
+		self.conv72 = nn.Conv2d(512,512,(1,3),1,(0,1))
 		self.conv73 = nn.Conv2d(512,512,(1,1),1,(0,0))
 		#residual add
 
@@ -94,9 +94,11 @@ class CNN(nn.Module):
 	def forward(self,input):
 		input = input.unsqueeze(1)
 		x = self.conv00(input)
+		
 		x = self.conv01(x)
 		x = self.conv02(x)
 		x = self.conv03(x)
+		x = F.relu(x)
 
 		#x1 = torch.tensor(x.size())
 		#x1.data = x.clone()
@@ -105,6 +107,7 @@ class CNN(nn.Module):
 		x = self.conv11(x)
 		x = self.conv12(x)
 		x = self.conv13(x)
+		x = F.relu(x)
 
 		#x = torch.add(x,x1) 
 		x+= x1
@@ -112,6 +115,7 @@ class CNN(nn.Module):
 		x = self.conv21(x)
 		x = self.conv22(x)
 		x = self.conv23(x)
+		x = F.relu(x)
 
 		#x1 = torch.tensor(x.size())
 		#x1.data = x.clone()
@@ -120,6 +124,7 @@ class CNN(nn.Module):
 		x = self.conv31(x)
 		x = self.conv32(x)
 		x = self.conv33(x)
+		x = F.relu(x)
 
 		#x = torch.add(x,x1) 
 		x+= x1 
@@ -127,6 +132,7 @@ class CNN(nn.Module):
 		x = self.conv41(x)
 		x = self.conv42(x)
 		x = self.conv43(x)
+		x = F.relu(x)
 
 		#x1 = torch.tensor(x.size())
 		#x1.data = x.clone()
@@ -135,6 +141,7 @@ class CNN(nn.Module):
 		x = self.conv51(x)
 		x = self.conv52(x)
 		x = self.conv53(x)
+		x = F.relu(x)
 
 		#x = torch.add(x,x1) 
 		x+= x1
@@ -142,6 +149,7 @@ class CNN(nn.Module):
 		x = self.conv61(x)
 		x = self.conv62(x)
 		x = self.conv63(x)
+		x = F.relu(x)
 
 		#x1 = torch.tensor(x.size())
 		#x1.data = x.clone()
@@ -150,8 +158,10 @@ class CNN(nn.Module):
 		x = self.conv71(x)
 		x = self.conv72(x)
 		x = self.conv73(x)
+		x = F.relu(x)
 
 		#x = torch.add(x,x1) 
+		
 		x+= x1
 
 		x = self.pool(x)
@@ -582,6 +592,7 @@ if __name__ == '__main__':
 
 
 				loss.backward()
+				print("backprop done")
 				torch.nn.utils.clip_grad_norm_(seq.parameters(), 1)
 				seq_optim.step()
 
