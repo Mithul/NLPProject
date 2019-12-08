@@ -20,97 +20,167 @@ WEIGHT_LOG_FREQ = 100
 SENT_LOG_FREQ = 40
 BLEU_FREQ = 50
 SAVE_FREQ = 50
-BATCH_SIZE = 96
+BATCH_SIZE = 8
 SAMPLES_IN_MEMORY = 1500
 BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
 MAX_SENT_LEN = 10
 MIN_SENT_LEN = 4
 MAX_FRAMES = 1000
 
-class Encoder(nn.Module):
-	def __init__(self,input_dim,input_channels,hidden_dim,output_dim,n_layers):
-		super(Encoder,self).__init__()
-		self.input_dim = input_dim
+
+class CNN(nn.Module):
+	def __init__(self,input_channels):
+		super(CNN,self).__init__()
 		self.input_channels = input_channels
-		self.hidden_dim = hidden_dim
-		self.output_dim = output_dim
-		self.n_layers = n_layers
-		self.conv1 = nn.Conv2d(self.input_channels,32,3,2,1)
-		self.bn = nn.BatchNorm2d(32)
-		self.bn2 = nn.BatchNorm2d(32)
-		self.conv2 = nn.Conv2d(32,32,3,2,1)
-		# self.clstm = convlstmAlt.ConvLSTM(input_channels=32, hidden_channels=[256], kernel_size=(1,3))
-		self.LSTM = nn.LSTM(32*10,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
-		self.LSTM_2 = nn.LSTM(512,self.hidden_dim,self.n_layers,bidirectional=True,dropout=0.3)
-		self.fc1 = nn.Linear(self.output_dim,self.output_dim)
-		self.fc2 = nn.Linear(32*10,self.output_dim)
-		self.fc3 = nn.Linear(768,256)
+		self.conv00 = nn.Conv2d(self.input_channels,32,3,2,1)
+		self.conv01 = nn.Conv2d(32,32,(3,1),1,(1,0))
+		self.conv02 = nn.Conv2d(32,32,(1,3),1,(0,1))
+		self.conv03 = nn.Conv2d(32,64,(1,1),2,(0,0))
 
-		self.softmax = nn.Softmax(dim=-1)
+		self.conv11 = nn.Conv2d(64,64,(3,1),1,(1,0))
+		self.conv12 = nn.Conv2d(64,64,(1,3),1,(0,1))
+		self.conv13 = nn.Conv2d(64,64,(1,1),1,(0,0))
+		#residul add
+		self.conv21 = nn.Conv2d(64,64,(3,1),1,(1,0))
+		self.conv22 = nn.Conv2d(64,64,(1,3),1,(0,1))
+		self.conv23 = nn.Conv2d(64,128,(1,1),1,(0,0))
 
-	def forward(self,input, h, c):
+		self.conv31 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv32 = nn.Conv2d(128,128,(1,3),1,(0,1))
+		self.conv33 = nn.Conv2d(128,128,(1,1),1,(0,0))
+
+		self.conv131 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv132 = nn.Conv2d(128,128,(1,3),1,(0,1))
+		self.conv133 = nn.Conv2d(128,128,(1,1),1,(0,0))
+		#residual add
+
+		self.conv41 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv42 = nn.Conv2d(128,128,(1,3),1,(0,1))
+		self.conv43 = nn.Conv2d(128,256,(1,1),1,(0,0))
+
+		self.conv51 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv52 = nn.Conv2d(256,256,(1,3),1,(0,1))
+		self.conv53 = nn.Conv2d(256,256,(1,1),1,(0,0))
+
+		self.conv151 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv152 = nn.Conv2d(256,256,(1,3),1,(0,1))
+		self.conv153 = nn.Conv2d(256,256,(1,1),1,(0,0))
+		#residual add
+
+		self.conv61 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv62 = nn.Conv2d(256,256,(1,3),1,(0,1))
+		self.conv63 = nn.Conv2d(256,512,(1,1),1,(0,0))
+
+
+		self.conv71 = nn.Conv2d(512,512,(3,1),1,(1,0))
+		self.conv72 = nn.Conv2d(512,512,(1,3),1,(0,1))
+		self.conv73 = nn.Conv2d(512,512,(1,1),1,(0,0))
+		#residual add
+
+		self.pool = nn.MaxPool2d((1,10),1,0)
+		self.bn = nn.BatchNorm2d(512)
+
+	def forward(self,input):
 		input = input.unsqueeze(1)
-		#input : [batch_size, channels(1), seq_len, feature_size]
-		if DEBUG: print(input.size())
-		# input = input.float()
-		batch_size = input.size(0)
-		x = self.conv1(input)
+		x = self.conv00(input)
+
+		x = self.conv01(x)
+		x = self.conv02(x)
+		x = self.conv03(x)
+		x = F.relu(x)
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv11(x)
+		x = self.conv12(x)
+		x = self.conv13(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1)
+		x+= x1
+
+		x = self.conv21(x)
+		x = self.conv22(x)
+		x = self.conv23(x)
+		x = F.relu(x)
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv31(x)
+		x = self.conv32(x)
+		x = self.conv33(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1)
+		x+= x1
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv131(x)
+		x = self.conv132(x)
+		x = self.conv133(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1)
+		x+= x1
+
+		x = self.conv41(x)
+		x = self.conv42(x)
+		x = self.conv43(x)
+		x = F.relu(x)
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv51(x)
+		x = self.conv52(x)
+		x = self.conv53(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1)
+		x+= x1
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv151(x)
+		x = self.conv152(x)
+		x = self.conv153(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1)
+		x+= x1
+
+		x = self.conv61(x)
+		x = self.conv62(x)
+		x = self.conv63(x)
+		x = F.relu(x)
+
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv71(x)
+		x = self.conv72(x)
+		x = self.conv73(x)
 		x = self.bn(x)
-		#x : [batch_size, channels(32), seq_len/2, feature_size]
-		if DEBUG: print("shape1",x.size())
-		x = self.conv2(x)
-		x = self.bn2(x)
-		#x : [batch_size, channels(32), seq_len/4, feature_size]
-		if DEBUG: print("shape2",x.size())
-		x = x.permute(2,0,1,3)
-		#x : [seq_len/4, batch_size, channels(32), feature_size]
-		x = x.contiguous().view(int(x.size(0)),x.size(1),-1)
-		#x : [seq_len/4, batch_size, channels(32) x feature_size]
-		if DEBUG: print("shape3",x.size())
+		x = F.relu(x)
 
-		outputs,(h,c) =  self.LSTM(x,(h,c))
-		#if DEBUG: print('sum',torch.sum(outputs[-1]-torch.cat((h[-2, :, :],h[-1, :, :]))))
-		if DEBUG: print("shapeOut",outputs.size())
-		if DEBUG: print("shapeH",h.size())
-		if DEBUG: print("shapeC",c.size())
+		#x = torch.add(x,x1)
 
-		h_op = outputs[-1] #ts x batch x 512
-		if DEBUG:print("h_op size: ",h_op.size())
-		h_op = h_op.unsqueeze(1)
-		if DEBUG:print("h_op size: ",h_op.size())
-		sa_ip = self.fc2(x.permute(1,0,2))
-		sa_ip = sa_ip.permute(0,2,1)
-		if DEBUG:print("sa_ip: ",sa_ip.size())
-		energy = torch.tanh(torch.bmm(h_op,sa_ip)) #b x ts1 x ts2
-		energy = energy.squeeze()
-		if DEBUG:print("energy:",energy.size())
-		attn_score = self.softmax(energy) # b x ts1
-		if DEBUG:print("attn_score:",attn_score.size())
-		attn_score = attn_score.unsqueeze(1)
-		h_op = h_op.permute(0,2,1)
-		if DEBUG:print(h_op.size())
-		sa_context = torch.bmm(h_op,attn_score)
-		if DEBUG:print("sa_context:",sa_context.size())
-		h_op = h_op.permute(2,0,1)
-		sa_context = sa_context.permute(2,0,1)
-		lstm_ip = torch.cat((h_op,sa_context))
-		if DEBUG:print("CONCATENATED:",lstm_ip.size())
-		#lstm_input = self.fc3(torch.cat(h_op,sa_context).permute(1,0,2))
+		x+= x1
 
+		x = self.pool(x)
 
-		outputs,(h,c) = self.LSTM_2(lstm_ip,(h,c))
-		# newOutput = []
-		# for out in outputs:
-		# 	newOutput.append(F.relu(self.fc1(out)))
-		# out = torch.stack(newOutput)
-		out = F.relu(self.fc1(outputs))
-		if DEBUG: print("shapeOut2",out.size())
-		return out,h,c
-		'''
-		out = F.relu((self.fc1(h[-2, :, :] + h[-1, :, :])))
-		if DEBUG: print("shapeOut2",out.size())'''
-		#batch normalization]
-
+		return x
 
 
 class Attention(nn.Module):
@@ -215,14 +285,15 @@ class Seq2Seq(nn.Module):
 		self.n_layers = 4
 		self.hidden_dim = 256
 		self.target_dim = target_dim
-		self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
+		#self.encoder = Encoder(40, 1, self.hidden_dim, self.hidden_dim*2, self.n_layers) # FBANK_Feats, input_channels, hidden_dim, output_dim, n_layers
+		self.encoder = CNN(1)
 		self.decoder = Decoder(target_dim, self.hidden_dim, self.hidden_dim*2, self.hidden_dim*2, self.n_layers, target_dim) # output_dim, dec_hidden_dim, enc_hidden_dim, attention_dim, n_layers
 		self.loss = nn.CrossEntropyLoss(ignore_index = PAD_token)
 		# self.enc_optim = optim.Adam(self.encoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 		# self.dec_optim = optim.Adam(self.decoder.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.01, amsgrad=False)
 
 
-	def forward(self,src,trg, teacher_forcing_ratio = 0.8):
+	def forward(self,src,trg, teacher_forcing_ratio = 0.8, eval = False):
 		#src #batch x chn x n_frames x filters
 		#trg #batch x trg_len x embedding_dim
 
@@ -231,12 +302,16 @@ class Seq2Seq(nn.Module):
 
 		batch_size = src.size(0)
 
-		h = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
-		c = torch.zeros(self.n_layers*2, batch_size, self.hidden_dim, device=device)
+		h = torch.zeros(4, batch_size, self.hidden_dim, device=device)
+		c = torch.zeros(4, batch_size, self.hidden_dim, device=device)
 
-		enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
-		# print(enc_outputs.size())
-		if DEBUG: print("hidden ",enc_hidden.size())
+		#enc_outputs,enc_hidden,enc_cell_state = self.encoder.forward(src, h, c)
+		enc_outputs = self.encoder.forward(src)
+		print(enc_outputs.size())
+		enc_outputs = enc_outputs.squeeze()
+		enc_outputs = enc_outputs.permute(2,0,1)
+		print(enc_outputs.size())
+		'''if DEBUG: print("hidden ",enc_hidden.size())
 		dec_init_hidden = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
 		dec_init_cell_state = torch.zeros(4,enc_hidden.size(1),enc_hidden.size(2), device=device)
 		j = 0
@@ -245,7 +320,9 @@ class Seq2Seq(nn.Module):
 			dec_init_cell_state[j] = enc_cell_state[i,:,:] + enc_cell_state[i+1,:,:]
 			j = j+1
 
-		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)
+		self.decoder.initStates(dec_init_hidden,dec_init_cell_state,enc_outputs, device)'''
+
+		self.decoder.initStates(h,c,enc_outputs, device)
 
 
 		outputs=torch.zeros(trg.size(1),trg.size(0), dtype=torch.long, device=device)
@@ -335,9 +412,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Self_attention")
+	writer = SummaryWriter("CNN")
 
-	SAVE_PATH = "Self_attention.model"
+	SAVE_PATH = "CNN.model"
 
 	iter = 0
 
@@ -382,7 +459,7 @@ if __name__ == '__main__':
 	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 5
+	REPEAT_TIMES = 1
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -452,7 +529,7 @@ if __name__ == '__main__':
 					if iter % SENT_LOG_FREQ == 0:
 						writer.add_text('output', output_lang.get_sentence(output), iters_per_epoch*epoch + iter)
 						writer.add_text('target', output_lang.get_sentence(trgt), iters_per_epoch*epoch + iter)
-					print("O", output_lang.get_sentence(output), output)
+					print("O", output_lang.get_sentence(output))
 					print("T", output_lang.get_sentence(trgt))
 					# print(forced)
 					# break
