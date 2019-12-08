@@ -16,13 +16,15 @@ from evaluate import get_bleu_score
 
 DEBUG = False
 
-WEIGHT_LOG_FREQ = 100
-SENT_LOG_FREQ = 40
-BLEU_FREQ = 50
-SAVE_FREQ = 50
-BATCH_SIZE = 96
+BATCH_SIZE = 16
 SAMPLES_IN_MEMORY = 1500
 BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+
+WEIGHT_LOG_FREQ = 500
+SENT_LOG_FREQ = 200
+BLEU_FREQ = 200
+SAVE_FREQ = 500
+
 MAX_SENT_LEN = 10
 MIN_SENT_LEN = 4
 MAX_FRAMES = 1000
@@ -346,10 +348,10 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
+	b_dev = mc_dev_data.get_batch(batch_size=4, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 5
+	REPEAT_TIMES = 1
 
 	for epoch in range(1000):
 		if start_epoch is not None:
@@ -364,10 +366,10 @@ if __name__ == '__main__':
 		for speech_feats, sentence_feats in get_batch(b, output_lang):
 			for repeat in range(REPEAT_TIMES):
 				print("ITER", iter)
-				shuffled_indeces = torch.randperm(speech_feats.size(0))
-
-				speech_feats = speech_feats[shuffled_indeces]
-				sentence_feats = sentence_feats[shuffled_indeces]
+				# shuffled_indeces = torch.randperm(speech_feats.size(0))
+				#
+				# speech_feats = speech_feats[shuffled_indeces]
+				# sentence_feats = sentence_feats[shuffled_indeces]
 				if start_iter is not None:
 					if start_iter > iter:
 						iter += 1
@@ -382,27 +384,18 @@ if __name__ == '__main__':
 				# if DEBUG: print(output_lang.get_sentence(output_lang.tensorFromSentence(sentence, device)))
 
 				if DEBUG: print("START")
-				f = speech_feats#torch.tensor(speech_feats, device=device)
-				# f = f.view(3,1,qwe,asd)
-				# qwe = f.size(0)
-				# asd = f.size(1)
-				# f = torch.cat((f,f,f))
-				# trg = "HeutesprecheichzuIhnenuberEnergieundKlima".lower()
+				f = speech_feats
 				trg= sentence_feats
-				# tr=[]
-				# for t in trg:
-				# 	tmp = [0]*64
-				# 	tmp[ord(t)-ord('a')]= 1
-				# 	tr.append(tmp)
-				# trg = [tr[:],tr[:],tr[:]]
-				# trg = torch.FloatTensor(trg)
+
 				print("f",f.size())
 				print("trg",trg.size())
 
 				if DEBUG: print("F", f.size())
 
+				tf_ratio = 0.4#(REPEAT_TIMES - repeat)/REPEAT_TIMES
+
 				seq.train()
-				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = (REPEAT_TIMES - repeat)/REPEAT_TIMES)
+				outputs, loss, forced = seq(f,trg, teacher_forcing_ratio = tf_ratio)
 
 
 				loss.backward()
