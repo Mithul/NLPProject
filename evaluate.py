@@ -1,8 +1,10 @@
-import baselineAlt
+import model1
 import numpy as np
 import random, tqdm, os, sys
 
+from nltk.translate import bleu
 from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import SmoothingFunction
 
 import torch
 import torch.nn.functional as F
@@ -15,9 +17,9 @@ from torch import optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-DEBUG = False
+DEBUG = True
 
-def get_bleu_score(outputs, trg, output_lang, bleu_level='char'):
+def get_bleu_score(outputs, trg, output_lang, smoooth, bleu_level='char'):
 	count = 0
 	total_score = 0
 	for output,trgt in zip(outputs,trg):
@@ -29,10 +31,10 @@ def get_bleu_score(outputs, trg, output_lang, bleu_level='char'):
 			grnd_sen = [output_lang.get_sentence(trgt).split()]
 		# print(''.join(out_sen), ''.join(grnd_sen[0]))
 		if "applaus" not in set(''.join(out_sen).split(" ")):
-			score = sentence_bleu(grnd_sen,out_sen)
+			score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
 			count = count + 1
 			total_score += score
-		score = sentence_bleu(grnd_sen,out_sen)
+		score = sentence_bleu(grnd_sen,out_sen,smoothing_function=smooth)
 		count = count + 1
 		total_score += score
 
@@ -44,7 +46,7 @@ if __name__ == '__main__':
 		print("Usage : python evaluate.py <model_path> [<word|char> [<max_sent_len>]]")
 		exit(1)
 
-	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
+	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=False)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	embeddings = torch.tensor(mc_data_train.get_word_embeddings().T, device=device)
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=False)
@@ -73,6 +75,7 @@ if __name__ == '__main__':
 		count = 0
 		total_score = 0
 
+		smooth = SmoothingFunction().method4
 		max_sent_len = 6
 		bleu_level = 'char'
 		if len(sys.argv) > 1:
@@ -83,7 +86,11 @@ if __name__ == '__main__':
 
 		with torch.no_grad():
 			b = mc_data.get_batch(batch_size=64,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_sent_len*150)
+<<<<<<< HEAD
 			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
+=======
+			for speech_feats, sentence_feats in tqdm.tqdm(model1.get_batch(b, output_lang)):
+>>>>>>> a0b1bd4... Smoothing added to evaluate
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
 				f = speech_feats
@@ -94,7 +101,7 @@ if __name__ == '__main__':
 				# if DEBUG: print("F", f.size())
 				seq.eval()
 				outputs, loss,_ = seq(f,trg)
-				score, b_count = get_bleu_score(outputs, trg, output_lang, bleu_level)
+				score, b_count = get_bleu_score(outputs, trg, output_lang, smooth, bleu_level)
 				total_score += score
 				count += b_count
 					# break
