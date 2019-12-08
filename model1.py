@@ -16,13 +16,15 @@ from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = False
 
-WEIGHT_LOG_FREQ = 100
-SENT_LOG_FREQ = 40
-BLEU_FREQ = 50
-SAVE_FREQ = 50
-BATCH_SIZE = 96
+BATCH_SIZE = 16
 SAMPLES_IN_MEMORY = 1500
 BUFFER_FACTOR = int(SAMPLES_IN_MEMORY/BATCH_SIZE)
+
+WEIGHT_LOG_FREQ = 500
+SENT_LOG_FREQ = 200
+BLEU_FREQ = 200
+SAVE_FREQ = 500
+
 MAX_SENT_LEN = 10
 MIN_SENT_LEN = 4
 MAX_FRAMES = 1000
@@ -320,9 +322,9 @@ if __name__ == '__main__':
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("Self_attention_word_fasttext")
+	writer = SummaryWriter("Baseline_word_fasttext")
 
-	SAVE_PATH = "Self_attention_word_fasttext.model"
+	SAVE_PATH = "Baseline_word_fasttext.model"
 
 	iter = 0
 
@@ -364,10 +366,10 @@ if __name__ == '__main__':
 		print("Loaded", start_epoch, start_iter, loss, iters_per_epoch)
 
 
-	b_dev = mc_dev_data.get_batch(batch_size=32, buffer_factor=1)
+	b_dev = mc_dev_data.get_batch(batch_size=4, buffer_factor=1)
 	dev_speech_feats, dev_sentence_feats = next(get_batch(b_dev, output_lang))
 
-	REPEAT_TIMES = 10
+	REPEAT_TIMES = 1
 
 	for epoch in range(1000):
 		if start_epoch is not None:
