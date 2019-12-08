@@ -63,20 +63,26 @@ class CNN(nn.Module):
 		self.conv22 = nn.Conv2d(64,64,(1,3),1,(0,1))
 		self.conv23 = nn.Conv2d(64,128,(1,1),1,(0,0))
 
-
 		self.conv31 = nn.Conv2d(128,128,(3,1),1,(1,0))
 		self.conv32 = nn.Conv2d(128,128,(1,3),1,(0,1))
 		self.conv33 = nn.Conv2d(128,128,(1,1),1,(0,0))
+
+		self.conv131 = nn.Conv2d(128,128,(3,1),1,(1,0))
+		self.conv132 = nn.Conv2d(128,128,(1,3),1,(0,1))
+		self.conv133 = nn.Conv2d(128,128,(1,1),1,(0,0))
 		#residual add
 
 		self.conv41 = nn.Conv2d(128,128,(3,1),1,(1,0))
 		self.conv42 = nn.Conv2d(128,128,(1,3),1,(0,1))
 		self.conv43 = nn.Conv2d(128,256,(1,1),1,(0,0))
 
-
 		self.conv51 = nn.Conv2d(256,256,(3,1),1,(1,0))
 		self.conv52 = nn.Conv2d(256,256,(1,3),1,(0,1))
 		self.conv53 = nn.Conv2d(256,256,(1,1),1,(0,0))
+
+		self.conv151 = nn.Conv2d(256,256,(3,1),1,(1,0))
+		self.conv152 = nn.Conv2d(256,256,(1,3),1,(0,1))
+		self.conv153 = nn.Conv2d(256,256,(1,1),1,(0,0))
 		#residual add
 
 		self.conv61 = nn.Conv2d(256,256,(3,1),1,(1,0))
@@ -90,6 +96,7 @@ class CNN(nn.Module):
 		#residual add
 
 		self.pool = nn.MaxPool2d((1,10),1,0)
+		self.bn = nn.BatchNorm2d(512)
 
 	def forward(self,input):
 		input = input.unsqueeze(1)
@@ -129,6 +136,18 @@ class CNN(nn.Module):
 		#x = torch.add(x,x1) 
 		x+= x1 
 
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv131(x)
+		x = self.conv132(x)
+		x = self.conv133(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1) 
+		x+= x1 
+
 		x = self.conv41(x)
 		x = self.conv42(x)
 		x = self.conv43(x)
@@ -146,6 +165,18 @@ class CNN(nn.Module):
 		#x = torch.add(x,x1) 
 		x+= x1
 
+		#x1 = torch.tensor(x.size())
+		#x1.data = x.clone()
+		x1 = x
+
+		x = self.conv151(x)
+		x = self.conv152(x)
+		x = self.conv153(x)
+		x = F.relu(x)
+
+		#x = torch.add(x,x1) 
+		x+= x1
+
 		x = self.conv61(x)
 		x = self.conv62(x)
 		x = self.conv63(x)
@@ -158,6 +189,7 @@ class CNN(nn.Module):
 		x = self.conv71(x)
 		x = self.conv72(x)
 		x = self.conv73(x)
+		x = self.bn(x) 
 		x = F.relu(x)
 
 		#x = torch.add(x,x1) 
@@ -489,7 +521,7 @@ if __name__ == '__main__':
 
 	writer = SummaryWriter("Baseline_attempt5")
 
-	SAVE_PATH = "baseline.model"
+	SAVE_PATH = "baseline_cnn.model"
 
 	iter = 0
 

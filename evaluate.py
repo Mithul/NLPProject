@@ -85,7 +85,7 @@ if __name__ == '__main__':
 
 		with torch.no_grad():
 			b = mc_data.get_batch(batch_size=32,buffer_factor=1, max_sent_len=max_sent_len, max_frames=max_sent_len*150)
-			for speech_feats, sentence_feats in tqdm.tqdm(baselineAlt.get_batch(b, output_lang)):
+			for speech_feats, sentence_feats in tqdm.tqdm(model1.get_batch(b, output_lang)):
 			#for speech_feats, sentence_feats in mc_data.get_batch(batch_size=1):
 				# if DEBUG: print("START")
 				f = speech_feats
