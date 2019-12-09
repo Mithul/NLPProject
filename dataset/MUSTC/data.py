@@ -215,7 +215,9 @@ class MUSTCData(object):
 		data_directory = os.path.join(data_directory, self.l1+"-"+self.l2)
 		words_file = os.path.join(data_directory, self.l2 + ".words")
 		with open(words_file) as f:
-			for line in f:
+			for i, line in enumerate(f):
+				if i < 4:
+					continue
 				word = line.strip()
 				self.output_lang.addWord(word)
 		return self.input_lang, self.output_lang, None
