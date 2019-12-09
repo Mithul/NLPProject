@@ -1,4 +1,3 @@
-import model1
 import numpy as np
 import random, tqdm, os, sys
 
@@ -19,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = True
 
-def get_bleu_score(outputs, trg, output_lang, smoooth, bleu_level='char'):
+def get_bleu_score(outputs, trg, output_lang, smooth=SmoothingFunction().method4, bleu_level='char'):
 	count = 0
 	total_score = 0
 	for output,trgt in zip(outputs,trg):
@@ -46,6 +45,7 @@ if __name__ == '__main__':
 		print("Usage : python evaluate.py <model_path> [<word|char> [<max_sent_len>]]")
 		exit(1)
 
+	import model1
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=True)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=True)
