@@ -18,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = True
 
-def get_bleu_score(outputs, trg, output_lang, smoooth, bleu_level='char'):
+def get_bleu_score(outputs, trg, output_lang, smooth=SmoothingFunction().method4, bleu_level='char'):
 	count = 0
 	total_score = 0
 	for output,trgt in zip(outputs,trg):
