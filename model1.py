@@ -349,15 +349,15 @@ if __name__ == '__main__':
 
 	mc_dev_data = Dataset('en', 'de', dataset_type="dev", character_level=False)
 
-	if DEBUG: print("DIM", output_lang.n_words)
+	print("DIM", output_lang.n_words, embeddings)
 	seq = Seq2Seq(output_lang.n_words, embeddings).to(device)
 	seq.init_weights()
 	seq_optim = optim.Adam(seq.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-06, weight_decay=0.00001, amsgrad=False)
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
-	writer = SummaryWriter("pyramid_word")
+	writer = SummaryWriter("pyramid_fasttext")
 
-	SAVE_PATH = "pyramid_word.model"
+	SAVE_PATH = "pyramid_fasttext.model"
 
 	iter = 0
 
