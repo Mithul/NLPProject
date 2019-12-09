@@ -48,9 +48,10 @@ if __name__ == '__main__':
 	import model1
 	mc_data_train = Dataset('en', 'de', dataset_type="train", character_level=False)
 	input_lang, output_lang, _ = mc_data_train.prepareData()
+	embeddings = torch.tensor(mc_data_train.get_word_embeddings().T, device=device)
 	mc_data = Dataset('en', 'de', dataset_type="tst-COMMON", character_level=False)
 	if DEBUG: print("DIM", output_lang.n_words)
-	seq = model1.Seq2Seq(output_lang.n_words).to(device)
+	seq = model1.Seq2Seq(output_lang.n_words, embeddings).to(device)
 	seq.init_weights()
 	print(f'The model has {seq.count_parameters():,} trainable parameters')
 
